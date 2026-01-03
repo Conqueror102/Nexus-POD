@@ -1,70 +1,93 @@
-const CACHE_NAME = 'nexus-pod-cache-v1';
-const PRECACHE_URLS = [
+const CACHE_NAME = 'nexus-pod-v1';
+const OFFLINE_URL = '/offline';
+
+// Assets to cache immediately on install
+const PRECACHE_ASSETS = [
   '/',
+  '/dashboard',
+  '/offline',
+  '/manifest.json',
+  '/icon-192.svg',
 ];
 
+// Install event - cache core assets
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(PRECACHE_ASSETS);
+    })
   );
+  self.skipWaiting();
 });
 
+// Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    (async () => {
-      // Clean up old caches
-      const keys = await caches.keys();
-      await Promise.all(
-        keys.map(k => {
-          if (k !== CACHE_NAME) return caches.delete(k);
-        })
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
       );
-      await self.clients.claim();
-    })()
+    })
   );
+  self.clients.claim();
 });
 
-// Network-first for navigation requests, cache-first for assets
+// Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-
-  // Only handle GET requests
-  if (request.method !== 'GET') return;
-
   const url = new URL(request.url);
 
-  // Handle navigations (page refresh)
-  if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
-    event.respondWith(
-      (async () => {
-        try {
+  // Skip non-GET requests
+  if (request.method !== 'GET') return;
+
+  // Skip API requests - let them fail naturally for offline handling
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Skip auth-related requests
+  if (url.pathname.startsWith('/auth/')) return;
+
+  event.respondWith(
+    (async () => {
+      try {
+        // Try network first for navigation requests
+        if (request.mode === 'navigate') {
           const networkResponse = await fetch(request);
+          // Cache successful responses
+          if (networkResponse.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        }
+
+        // For other requests, try cache first, then network
+        const cachedResponse = await caches.match(request);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        const networkResponse = await fetch(request);
+        if (networkResponse.ok) {
           const cache = await caches.open(CACHE_NAME);
           cache.put(request, networkResponse.clone());
-          return networkResponse;
-        } catch (err) {
-          const cache = await caches.open(CACHE_NAME);
-          const cached = await cache.match('/');
-          if (cached) return cached;
-          // As a last resort, return an offline fallback response
-          return new Response('<html><body><h1>Offline</h1><p>You appear to be offline.</p></body></html>', {
-            headers: { 'Content-Type': 'text/html' },
-          });
         }
-      })()
-    );
-    return;
-  }
+        return networkResponse;
+      } catch (error) {
+        // Network failed - serve from cache or offline page
+        const cachedResponse = await caches.match(request);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
 
-  // For other same-origin requests (assets), try cache first
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request).then((resp) => {
-        // Cache fetched assets for future
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, resp.clone()));
-        return resp;
-      })).catch(() => cached || Promise.reject('no-match'))
-    );
-  }
-});
+        // For navigation requests, show offline page
+        if (request.mode === 'navigate') {
+          const offlineResponse = await caches.match(OFFLINE_URL);
+          if (offlineResponse) {
+            return offlineResponse;
+          }
+        }
+
+        throw error;
+      }
