@@ -4,7 +4,6 @@ import "./globals.css";
 import { VisualEditsMessenger } from "orchids-visual-edits";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ServiceWorkerRegister } from "@/components/service-worker-register";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -46,7 +45,6 @@ export default function RootLayout({
         >
           {children}
           <Toaster />
-          <ServiceWorkerRegister />
         </ThemeProvider>
         <VisualEditsMessenger />
       </body>
