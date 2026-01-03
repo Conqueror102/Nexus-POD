@@ -11,18 +11,24 @@ export function useOfflineSync() {
   const [pendingCount, setPendingCount] = useState(0)
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const hasInitialized = useRef(false)
+  const syncPendingChangesRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
     // Only set initial state once to avoid flash
     if (!hasInitialized.current) {
       hasInitialized.current = true
-      setIsOnline(navigator.onLine)
+      // Use navigator.onLine, but also check if we can actually reach the network
+      const online = typeof navigator !== 'undefined' ? navigator.onLine : true
+      setIsOnline(online)
     }
 
     function handleOnline() {
       setIsOnline(true)
       toast.success("You're back online!", { description: "Syncing your changes..." })
-      syncPendingChanges()
+      // Call sync if available
+      if (syncPendingChangesRef.current) {
+        syncPendingChangesRef.current()
+      }
     }
 
     function handleOffline() {
@@ -30,12 +36,16 @@ export function useOfflineSync() {
       toast.warning("You're offline", { description: "Changes will sync when you reconnect." })
     }
 
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
+    }
 
     return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
+      }
     }
   }, [])
 
@@ -114,6 +124,11 @@ export function useOfflineSync() {
       }
     }
   }
+
+  // Update ref whenever syncPendingChanges changes
+  useEffect(() => {
+    syncPendingChangesRef.current = syncPendingChanges
+  }, [syncPendingChanges])
 
   useEffect(() => {
     if (isOnline && pendingCount > 0) {

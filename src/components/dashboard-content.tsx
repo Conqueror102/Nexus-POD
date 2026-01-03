@@ -181,6 +181,40 @@ export function DashboardContent() {
         fetch(`/api/files?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
       ])
 
+      // Check if all API calls failed - if so, load from IndexedDB
+      const allFailed = !projectsRes.ok && !tasksRes.ok && !membersRes.ok && !chatRes.ok
+      
+      if (allFailed) {
+        // All API calls failed, load from IndexedDB
+        try {
+          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
+          const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
+          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
+          const offlineMembers = await db.members.where('pod_id').equals(selectedPod.id).toArray()
+          
+          setProjects(offlineProjects)
+          setTasks(offlineTasks)
+          setChatMessages(offlineMessages)
+          setMembers(offlineMembers.map(m => ({
+            id: m.id,
+            pod_id: m.pod_id,
+            user_id: m.user_id,
+            role: m.role,
+            profiles: {
+              display_name: m.display_name,
+              email: m.email,
+              avatar_url: m.avatar_url,
+            }
+          })))
+          setActivityLogs([])
+          setPodFiles([])
+          return
+        } catch (dbError) {
+          console.error('Error loading offline data:', dbError)
+          // Continue to try API data if available
+        }
+      }
+
       const projectsData = projectsRes.ok ? await projectsRes.json().catch(() => []) : []
       const tasksData = tasksRes.ok ? await tasksRes.json().catch(() => []) : []
       const membersData = membersRes.ok ? await membersRes.json().catch(() => []) : []
@@ -188,14 +222,30 @@ export function DashboardContent() {
       const activityData = activityRes.ok ? await activityRes.json().catch(() => []) : []
       const filesData = filesRes.ok ? await filesRes.json().catch(() => []) : []
 
-      setProjects(projectsData)
-      setTasks(tasksData)
+      // If some API calls failed, merge with offline data
+      if (!projectsRes.ok || !tasksRes.ok || !chatRes.ok) {
+        try {
+          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
+          const offlineTasks = await db.tasks.where('project_id').anyOf((projectsData.length > 0 ? projectsData : offlineProjects).map(p => p.id)).toArray()
+          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
+          
+          setProjects(projectsData.length > 0 ? projectsData : offlineProjects)
+          setTasks(tasksData.length > 0 ? tasksData : offlineTasks)
+          setChatMessages(chatData.length > 0 ? chatData : offlineMessages)
+        } catch (dbError) {
+          console.error('Error merging offline data:', dbError)
+        }
+      } else {
+        setProjects(projectsData)
+        setTasks(tasksData)
+        setChatMessages(chatData)
+      }
+
       setMembers(membersData)
-      setChatMessages(chatData)
       setActivityLogs(activityData)
       setPodFiles(filesData)
 
-      if (isOnline) {
+      if (isOnline && projectsRes.ok) {
         cachePodData(selectedPod.id, {
           pod: selectedPod,
           role: selectedPod.role,
