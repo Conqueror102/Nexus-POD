@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Hexagon, Loader2, Users } from "lucide-react"
+import { Hexagon, Loader2, Users, X } from "lucide-react"
 import Link from "next/link"
 
 interface InviteData {
@@ -70,30 +70,32 @@ export default function JoinPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4">
-        <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 backdrop-blur-xl">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
+        </div>
+        <Card className="w-full max-w-md relative z-10">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
-                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+              <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
+                <X className="w-8 h-8 text-destructive" />
               </div>
             </div>
-            <CardTitle className="text-xl text-white">Invalid Invite</CardTitle>
-            <CardDescription className="text-slate-400">{error}</CardDescription>
+            <CardTitle className="text-xl">Invalid Invite</CardTitle>
+            <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardFooter className="justify-center">
             <Link href="/">
-              <Button variant="ghost" className="text-slate-400 hover:text-white">
+              <Button variant="ghost">
                 Go Home
               </Button>
             </Link>
@@ -104,41 +106,45 @@ export default function JoinPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-4">
-      <Card className="w-full max-w-md border-slate-800 bg-slate-900/80 backdrop-blur-xl">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
+      </div>
+      <Card className="w-full max-w-md relative z-10">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <Hexagon className="w-16 h-16 text-emerald-500 fill-emerald-500/10" strokeWidth={1.5} />
-              <span className="absolute inset-0 flex items-center justify-center text-emerald-400 font-bold text-xl">N</span>
+              <Hexagon className="w-16 h-16 text-primary fill-primary/10" strokeWidth={1.5} />
+              <span className="absolute inset-0 flex items-center justify-center text-primary font-bold text-xl">N</span>
             </div>
           </div>
-          <CardTitle className="text-xl text-white">Join Pod</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardTitle className="text-xl">Join Pod</CardTitle>
+          <CardDescription>
             You&apos;ve been invited to join a pod
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {invite && (
-            <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+            <div className="p-4 rounded-lg bg-muted border">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                  <Users className="w-6 h-6 text-emerald-400" />
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-white">{invite.pods.title}</p>
-                  <p className="text-sm text-slate-500">{invite.pods.npn}</p>
+                  <p className="font-medium">{invite.pods.title}</p>
+                  <p className="text-sm text-muted-foreground">{invite.pods.npn}</p>
                 </div>
               </div>
               {invite.pods.summary && (
-                <p className="mt-3 text-sm text-slate-400">{invite.pods.summary}</p>
+                <p className="mt-3 text-sm text-muted-foreground">{invite.pods.summary}</p>
               )}
             </div>
           )}
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
           {isLoggedIn ? (
-            <Button onClick={handleJoin} disabled={joining} className="w-full bg-emerald-600 hover:bg-emerald-500">
+            <Button onClick={handleJoin} disabled={joining} className="w-full">
               {joining ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -151,12 +157,12 @@ export default function JoinPage() {
           ) : (
             <>
               <Link href={`/signup?redirect=/join/${code}`} className="w-full">
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-500">
+                <Button className="w-full">
                   Create Account to Join
                 </Button>
               </Link>
               <Link href={`/login?redirect=/join/${code}`} className="w-full">
-                <Button variant="outline" className="w-full border-slate-700 text-slate-300">
+                <Button variant="outline" className="w-full">
                   Login to Join
                 </Button>
               </Link>

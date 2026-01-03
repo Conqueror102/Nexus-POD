@@ -3,6 +3,9 @@ export interface Profile {
   email: string
   display_name: string | null
   avatar_url: string | null
+  notification_email: boolean
+  notification_push: boolean
+  timezone: string
   created_at: string
   updated_at: string
 }
@@ -86,6 +89,17 @@ export interface TaskReminder {
   created_at: string
 }
 
+export interface PodFile {
+  id: string
+  pod_id: string
+  name: string
+  size_bytes: number
+  mime_type: string | null
+  storage_path: string
+  uploaded_by: string
+  created_at: string
+}
+
 export interface PodWithRole extends Pod {
   role: 'founder' | 'member'
   member_count?: number
@@ -101,4 +115,23 @@ export interface TaskWithDetails extends Task {
 export interface ProjectWithTasks extends Project {
   tasks?: Task[]
   task_count?: number
+}
+
+export interface PodFileWithProfile extends PodFile {
+  profiles?: Profile
+}
+
+export interface Notification {
+  id: string
+  user_id: string
+  pod_id: string | null
+  task_id: string | null
+  type: 'task_reminder' | 'task_assigned' | 'task_completed' | 'comment_added' | 'member_joined' | 'task_due_reminder' | 'task_comment' | 'pod_invite' | 'pod_join' | 'general'
+  title: string
+  message: string
+  link: string | null
+  is_read: boolean
+  created_at: string
+  pods?: { id: string; title: string; npn: string } | null
+  tasks?: { id: string; name: string } | null
 }
