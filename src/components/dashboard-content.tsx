@@ -25,12 +25,14 @@ import {
   ChevronRight, Calendar, CheckCircle2, Circle, Clock, Loader2, Copy, Check,
   Send, MoreVertical, Trash2, UserMinus, Link as LinkIcon, TrendingUp,
   AlertTriangle, Target, BarChart3, Activity, Search, Bell, Settings, User, X,
-  Download, Filter, ArrowUpCircle, ArrowRightCircle, ArrowDownCircle
+  Download, Filter, ArrowUpCircle, ArrowRightCircle, ArrowDownCircle,
+  Upload, FileIcon, Image, FileText, Eye, HardDrive
 } from "lucide-react"
 import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns"
-import type { PodWithRole, Project, Task, Profile, Notification, ActivityLog } from "@/lib/types"
+import type { PodWithRole, Project, Task, Profile, Notification, ActivityLog, PodFileWithProfile } from "@/lib/types"
 import { SplashScreen } from "@/components/splash-screen"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { FilePreview } from "@/components/file-preview"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,6 +125,11 @@ export function DashboardContent() {
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
   const [showSplash, setShowSplash] = useState(true)
+  const [podFiles, setPodFiles] = useState<PodFileWithProfile[]>([])
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; mime_type: string | null } | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [profileDisplayName, setProfileDisplayName] = useState("")
   const [savingProfile, setSavingProfile] = useState(false)
@@ -179,12 +186,13 @@ export function DashboardContent() {
   async function fetchPodData() {
     if (!selectedPod) return
 
-    const [projectsRes, tasksRes, membersRes, chatRes, activityRes] = await Promise.all([
+    const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
       fetch(`/api/projects?pod_id=${selectedPod.id}`),
       fetch(`/api/tasks?pod_id=${selectedPod.id}`),
       fetch(`/api/pods/${selectedPod.id}/members`),
       fetch(`/api/chat?pod_id=${selectedPod.id}`),
       fetch(`/api/activity?pod_id=${selectedPod.id}`),
+      fetch(`/api/files?pod_id=${selectedPod.id}`),
     ])
 
     if (projectsRes.ok) setProjects(await projectsRes.json())
@@ -192,6 +200,7 @@ export function DashboardContent() {
     if (membersRes.ok) setMembers(await membersRes.json())
     if (chatRes.ok) setChatMessages(await chatRes.json())
     if (activityRes.ok) setActivityLogs(await activityRes.json())
+    if (filesRes.ok) setPodFiles(await filesRes.json())
   }
 
   useEffect(() => {
@@ -441,6 +450,79 @@ export function DashboardContent() {
       body: JSON.stringify({ notification_id: id }),
     })
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !selectedPod) return
+
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error("File size exceeds 25MB limit")
+      return
+    }
+
+    setUploadingFile(true)
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("pod_id", selectedPod.id)
+
+    const res = await fetch("/api/files", { method: "POST", body: formData })
+    if (res.ok) {
+      toast.success("File uploaded successfully!")
+      fetchPodData()
+    } else {
+      const err = await res.json()
+      toast.error(err.error || "Failed to upload file")
+    }
+    setUploadingFile(false)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  async function handleFileDelete(fileId: string) {
+    const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" })
+    if (res.ok) {
+      toast.success("File deleted")
+      fetchPodData()
+    } else {
+      toast.error("Failed to delete file")
+    }
+  }
+
+  async function handleFilePreview(file: PodFileWithProfile) {
+    const res = await fetch(`/api/files/${file.id}`)
+    if (res.ok) {
+      const { url } = await res.json()
+      setPreviewFile({ name: file.name, url, mime_type: file.mime_type })
+      setPreviewOpen(true)
+    } else {
+      toast.error("Failed to load file preview")
+    }
+  }
+
+  async function handleFileDownload(file: PodFileWithProfile) {
+    const res = await fetch(`/api/files/${file.id}`)
+    if (res.ok) {
+      const { url } = await res.json()
+      const link = document.createElement("a")
+      link.href = url
+      link.download = file.name
+      link.target = "_blank"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  }
+
+  function formatFileSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  function getFileIcon(mimeType: string | null) {
+    if (mimeType?.startsWith("image/")) return Image
+    if (mimeType === "application/pdf") return FileText
+    return FileIcon
   }
 
   const statusColors = {
@@ -882,25 +964,29 @@ export function DashboardContent() {
                 </div>
               </div>
 
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList>
-                  <TabsTrigger value="overview">
-                    <BarChart3 className="w-4 h-4 mr-2" />
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger value="projects">
-                    <FolderKanban className="w-4 h-4 mr-2" />
-                    Projects
-                  </TabsTrigger>
-                  <TabsTrigger value="members">
-                    <Users className="w-4 h-4 mr-2" />
-                    Team
-                  </TabsTrigger>
-                  <TabsTrigger value="chat">
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    Chat
-                  </TabsTrigger>
-                </TabsList>
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+                  <TabsList>
+                    <TabsTrigger value="overview">
+                      <BarChart3 className="w-4 h-4 mr-2" />
+                      Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="projects">
+                      <FolderKanban className="w-4 h-4 mr-2" />
+                      Projects
+                    </TabsTrigger>
+                    <TabsTrigger value="members">
+                      <Users className="w-4 h-4 mr-2" />
+                      Team
+                    </TabsTrigger>
+                    <TabsTrigger value="files">
+                      <HardDrive className="w-4 h-4 mr-2" />
+                      Files
+                    </TabsTrigger>
+                    <TabsTrigger value="chat">
+                      <MessageSquare className="w-4 h-4 mr-2" />
+                      Chat
+                    </TabsTrigger>
+                  </TabsList>
 
                 <TabsContent value="overview" className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1472,11 +1558,90 @@ export function DashboardContent() {
                           </div>
                         ))}
                       </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
-                <TabsContent value="chat" className="space-y-4">
+                  <TabsContent value="files" className="space-y-4">
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <CardTitle>Files</CardTitle>
+                            <CardDescription>
+                              {formatFileSize(selectedPod?.storage_used_bytes || 0)} / 1 GB used
+                            </CardDescription>
+                          </div>
+                          <div>
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={handleFileUpload}
+                              className="hidden"
+                              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
+                            />
+                            <Button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}>
+                              {uploadingFile ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                              Upload File
+                            </Button>
+                          </div>
+                        </div>
+                        <Progress value={((selectedPod?.storage_used_bytes || 0) / (1024 * 1024 * 1024)) * 100} className="h-2 mt-2" />
+                      </CardHeader>
+                      <CardContent>
+                        {podFiles.length > 0 ? (
+                          <div className="space-y-2">
+                            {podFiles.map((file) => {
+                              const FileIconComponent = getFileIcon(file.mime_type)
+                              const canPreview = file.mime_type?.startsWith("image/") || file.mime_type === "application/pdf"
+                              return (
+                                <div key={file.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center">
+                                      <FileIconComponent className="w-5 h-5 text-muted-foreground" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium truncate">{file.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatFileSize(file.size_bytes)} · {file.profiles?.display_name || "Unknown"} · {formatDistanceToNow(new Date(file.created_at), { addSuffix: true })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {canPreview && (
+                                      <Button variant="ghost" size="icon" onClick={() => handleFilePreview(file)}>
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
+                                    )}
+                                    <Button variant="ghost" size="icon" onClick={() => handleFileDownload(file)}>
+                                      <Download className="w-4 h-4" />
+                                    </Button>
+                                    {(isFounder || file.uploaded_by === user?.id) && (
+                                      <Button variant="ghost" size="icon" onClick={() => handleFileDelete(file.id)} className="text-muted-foreground hover:text-destructive">
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <HardDrive className="w-12 h-12 text-muted-foreground/50 mb-4" />
+                            <h3 className="text-lg font-medium mb-2">No files yet</h3>
+                            <p className="text-muted-foreground text-sm mb-4">Upload files to share with your team (max 25MB each)</p>
+                            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                              <Upload className="w-4 h-4 mr-2" />
+                              Upload First File
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="chat" className="space-y-4">
                   <Card className="h-[calc(100vh-280px)] flex flex-col">
                     <CardHeader className="pb-3">
                       <CardTitle>Pod Chat</CardTitle>
@@ -1629,11 +1794,12 @@ export function DashboardContent() {
                 <Plus className="w-4 h-4 mr-2" />
                 Create Your First Pod
               </Button>
-              </div>
-            )}
-          </main>
+                </div>
+              )}
+            </main>
+          </div>
         </div>
-      </div>
-    </ErrorBoundary>
-  )
-}
+        <FilePreview open={previewOpen} onOpenChange={setPreviewOpen} file={previewFile} />
+      </ErrorBoundary>
+    )
+  }
