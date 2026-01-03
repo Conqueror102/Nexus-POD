@@ -246,27 +246,122 @@ export function DashboardContent() {
 
   async function handleCreateProject(name: string, description: string) {
     if (!selectedPod) return
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pod_id: selectedPod.id, name, description }),
-    })
-    if (res.ok) {
-      const project = await res.json()
-      setProjects(prev => [project, ...prev])
-      toast.success("Project created successfully!")
+    try {
+      if (!navigator.onLine) {
+        const offlineProject = {
+          id: `local_${Date.now()}`,
+          pod_id: selectedPod.id,
+          name,
+          description: description || null,
+          created_by: user?.id || '',
+          synced_at: 0,
+        }
+        await db.projects.add(offlineProject)
+        await db.pendingSync.add({
+          type: 'task_create',
+          entity_id: offlineProject.id,
+          data: { pod_id: selectedPod.id, name, description, type: 'project' },
+          created_at: Date.now(),
+          retries: 0,
+        })
+        setProjects(prev => [offlineProject, ...prev])
+        toast.success("Project saved offline. It will sync when you're back online.")
+        return
+      }
+
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pod_id: selectedPod.id, name, description }),
+      })
+      if (res.ok) {
+        const project = await res.json()
+        await db.projects.put({ ...project, synced_at: Date.now() })
+        setProjects(prev => [project, ...prev])
+        toast.success("Project created successfully!")
+      }
+    } catch (error) {
+      console.error('Project creation error:', error)
+      if (!navigator.onLine) {
+        const offlineProject = {
+          id: `local_${Date.now()}`,
+          pod_id: selectedPod.id,
+          name,
+          description: description || null,
+          created_by: user?.id || '',
+          synced_at: 0,
+        }
+        await db.projects.add(offlineProject)
+        setProjects(prev => [offlineProject, ...prev])
+        toast.success("Project saved offline. It will sync when you're back online.")
+      } else {
+        toast.error("Failed to create project")
+      }
     }
   }
 
   async function handleCreateTask(data: { project_id: string; name: string; description: string; due_date: string; assigned_to: string; priority: "low" | "medium" | "high" }) {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, due_date: new Date(data.due_date).toISOString(), assigned_to: data.assigned_to || null }),
-    })
-    if (res.ok) {
-      fetchPodData()
-      toast.success("Task created successfully!")
+    try {
+      if (!navigator.onLine) {
+        const offlineTask = {
+          id: `local_${Date.now()}`,
+          project_id: data.project_id,
+          name: data.name,
+          description: data.description,
+          due_date: new Date(data.due_date).toISOString(),
+          assigned_to: data.assigned_to || null,
+          status: 'not_started' as const,
+          priority: data.priority,
+          created_by: user?.id || '',
+          synced_at: 0,
+          is_dirty: true,
+        }
+        await db.tasks.add(offlineTask)
+        await db.pendingSync.add({
+          type: 'task_create',
+          entity_id: offlineTask.id,
+          data: { ...data, due_date: new Date(data.due_date).toISOString(), assigned_to: data.assigned_to || null, type: 'task' },
+          created_at: Date.now(),
+          retries: 0,
+        })
+        fetchPodData()
+        toast.success("Task saved offline. It will sync when you're back online.")
+        return
+      }
+
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, due_date: new Date(data.due_date).toISOString(), assigned_to: data.assigned_to || null }),
+      })
+      if (res.ok) {
+        const task = await res.json()
+        await db.tasks.put({ ...task, synced_at: Date.now(), is_dirty: false })
+        fetchPodData()
+        toast.success("Task created successfully!")
+      }
+    } catch (error) {
+      console.error('Task creation error:', error)
+      if (!navigator.onLine) {
+        const offlineTask = {
+          id: `local_${Date.now()}`,
+          project_id: data.project_id,
+          name: data.name,
+          description: data.description,
+          due_date: new Date(data.due_date).toISOString(),
+          assigned_to: data.assigned_to || null,
+          status: 'not_started' as const,
+          priority: data.priority,
+          created_by: user?.id || '',
+          synced_at: 0,
+          is_dirty: true,
+        }
+        await db.tasks.add(offlineTask)
+        fetchPodData()
+        toast.success("Task saved offline. It will sync when you're back online.")
+      } else {
+        toast.error("Failed to create task")
+      }
     }
   }
 
@@ -295,9 +390,54 @@ export function DashboardContent() {
 
   async function handleSendChat() {
     if (!chatMessage.trim() || !selectedPod) return
-    const tempMessage = chatMessage
-    setChatMessage("")
-    await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pod_id: selectedPod.id, content: tempMessage }) })
+    try {
+      const tempMessage = chatMessage
+      setChatMessage("")
+
+      if (!navigator.onLine) {
+        const offlineMessage = {
+          id: `local_${Date.now()}`,
+          pod_id: selectedPod.id,
+          user_id: user?.id || '',
+          content: tempMessage,
+          created_at: new Date().toISOString(),
+          synced_at: 0,
+          is_dirty: true,
+        }
+        await db.chatMessages.add(offlineMessage)
+        await db.pendingSync.add({
+          type: 'chat_create',
+          entity_id: offlineMessage.id,
+          data: { pod_id: selectedPod.id, content: tempMessage },
+          created_at: Date.now(),
+          retries: 0,
+        })
+        // Add to local chat display
+        setChatMessages(prev => [...prev, offlineMessage])
+        toast.success("Message saved offline. It will send when you're back online.")
+        return
+      }
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pod_id: selectedPod.id, content: tempMessage })
+      })
+      if (res.ok) {
+        const message = await res.json()
+        await db.chatMessages.put({ ...message, synced_at: Date.now(), is_dirty: false })
+        setChatMessages(prev => [...prev, message])
+      }
+    } catch (error) {
+      console.error('Chat error:', error)
+      if (!navigator.onLine) {
+        // Restore message and mark for retry
+        setChatMessage(chatMessage)
+        toast.success("Message saved offline. It will send when you're back online.")
+      } else {
+        toast.error("Failed to send message")
+      }
+    }
   }
 
   async function openTaskDetail(task: TaskWithAssignee) {
