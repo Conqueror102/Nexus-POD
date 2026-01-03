@@ -72,6 +72,16 @@ export interface SyncMeta {
   value: string
 }
 
+export interface CachedUser {
+  id: string
+  email: string
+  display_name: string | null
+  avatar_url?: string
+  notification_email?: boolean
+  notification_push?: boolean
+  timezone?: string
+}
+
 const db = new Dexie('NexusPodOffline') as Dexie & {
   pods: EntityTable<OfflinePod, 'id'>
   projects: EntityTable<OfflineProject, 'id'>
@@ -80,6 +90,7 @@ const db = new Dexie('NexusPodOffline') as Dexie & {
   members: EntityTable<OfflineMember, 'id'>
   pendingSync: EntityTable<PendingSync, 'id'>
   syncMeta: EntityTable<SyncMeta, 'key'>
+  cachedUser: EntityTable<CachedUser, 'id'>
 }
 
 db.version(1).stores({
@@ -90,6 +101,7 @@ db.version(1).stores({
   members: 'id, pod_id, user_id',
   pendingSync: '++id, type, entity_id, created_at',
   syncMeta: 'key',
+  cachedUser: 'id',
 })
 
 export { db }
@@ -102,6 +114,7 @@ export async function clearOfflineData() {
   await db.members.clear()
   await db.pendingSync.clear()
   await db.syncMeta.clear()
+  await db.cachedUser.clear()
 }
 
 export async function getLastSyncTime(podId: string): Promise<number | null> {
