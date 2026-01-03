@@ -73,39 +73,69 @@ export function DashboardContent() {
   const [deletePodDialogOpen, setDeletePodDialogOpen] = useState(false)
 
   const fetchPods = useCallback(async () => {
-    // If offline, load from IndexedDB
-    if (!isOnline) {
-      try {
-        const offlinePods = await db.pods.toArray()
-        setPods(offlinePods)
-        if (offlinePods.length > 0 && !selectedPod) {
-          setSelectedPod(offlinePods[0])
+    try {
+      // If offline, load from IndexedDB
+      if (!isOnline) {
+        try {
+          const offlinePods = await db.pods.toArray()
+          setPods(offlinePods)
+          if (offlinePods.length > 0 && !selectedPod) {
+            setSelectedPod(offlinePods[0])
+          }
+          setLoading(false)
+          return
+        } catch (error) {
+          console.error('Error loading offline pods:', error)
         }
-        setLoading(false)
-        return
-      } catch (error) {
-        console.error('Error loading offline pods:', error)
       }
-    }
 
-    const res = await fetch("/api/pods")
-    if (res.ok) {
-      const data = await res.json()
-      setPods(data)
-      // Save to offline DB
-      data.forEach(pod => db.pods.put({ ...pod, synced_at: Date.now() }))
-      if (data.length > 0 && !selectedPod) {
-        setSelectedPod(data[0])
+      try {
+        const res = await fetch("/api/pods", { signal: AbortSignal.timeout(10000) })
+        if (res.ok) {
+          const data = await res.json()
+          setPods(data)
+          // Save to offline DB
+          data.forEach(pod => db.pods.put({ ...pod, synced_at: Date.now() }))
+          if (data.length > 0 && !selectedPod) {
+            setSelectedPod(data[0])
+          }
+        } else {
+          // If fetch fails, try to load from IndexedDB
+          const offlinePods = await db.pods.toArray()
+          setPods(offlinePods)
+          if (offlinePods.length > 0 && !selectedPod) {
+            setSelectedPod(offlinePods[0])
+          }
+        }
+      } catch (fetchError) {
+        console.warn('Error fetching pods from API, loading from offline DB:', fetchError)
+        // Load from offline DB as fallback
+        try {
+          const offlinePods = await db.pods.toArray()
+          setPods(offlinePods)
+          if (offlinePods.length > 0 && !selectedPod) {
+            setSelectedPod(offlinePods[0])
+          }
+        } catch (dbError) {
+          console.error('Error loading offline pods:', dbError)
+          setPods([])
+        }
       }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }, [selectedPod])
+  }, [isOnline, selectedPod])
 
   const fetchNotifications = useCallback(async () => {
-    const res = await fetch("/api/notifications")
-    if (res.ok) {
-      const data = await res.json()
-      setNotifications(data)
+    try {
+      const res = await fetch("/api/notifications", { signal: AbortSignal.timeout(10000) })
+      if (res.ok) {
+        const data = await res.json()
+        setNotifications(data)
+      }
+    } catch (error) {
+      console.warn('Error fetching notifications:', error)
+      // Silently fail, notifications are not critical
     }
   }, [])
 
@@ -121,8 +151,63 @@ export function DashboardContent() {
   const fetchPodData = useCallback(async () => {
     if (!selectedPod) return
 
-    // If offline, load from IndexedDB
-    if (!isOnline) {
+    try {
+      // If offline, load from IndexedDB
+      if (!isOnline) {
+        try {
+          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
+          const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
+          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
+          
+          setProjects(offlineProjects)
+          setTasks(offlineTasks)
+          setChatMessages(offlineMessages)
+          setMembers([])
+          setActivityLogs([])
+          setPodFiles([])
+          return
+        } catch (error) {
+          console.error('Error loading offline data:', error)
+          // Continue to try API
+        }
+      }
+
+      const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
+        fetch(`/api/projects?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+        fetch(`/api/tasks?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+        fetch(`/api/pods/${selectedPod.id}/members`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+        fetch(`/api/chat?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+        fetch(`/api/activity?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+        fetch(`/api/files?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
+      ])
+
+      const projectsData = projectsRes.ok ? await projectsRes.json().catch(() => []) : []
+      const tasksData = tasksRes.ok ? await tasksRes.json().catch(() => []) : []
+      const membersData = membersRes.ok ? await membersRes.json().catch(() => []) : []
+      const chatData = chatRes.ok ? await chatRes.json().catch(() => []) : []
+      const activityData = activityRes.ok ? await activityRes.json().catch(() => []) : []
+      const filesData = filesRes.ok ? await filesRes.json().catch(() => []) : []
+
+      setProjects(projectsData)
+      setTasks(tasksData)
+      setMembers(membersData)
+      setChatMessages(chatData)
+      setActivityLogs(activityData)
+      setPodFiles(filesData)
+
+      if (isOnline) {
+        cachePodData(selectedPod.id, {
+          pod: selectedPod,
+          role: selectedPod.role,
+          projects: projectsData,
+          tasks: tasksData,
+          members: membersData,
+          chatMessages: chatData,
+        })
+      }
+    } catch (error) {
+      console.warn('Error fetching pod data:', error)
+      // Try to load from offline DB as last resort
       try {
         const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
         const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
@@ -131,47 +216,9 @@ export function DashboardContent() {
         setProjects(offlineProjects)
         setTasks(offlineTasks)
         setChatMessages(offlineMessages)
-        setMembers([])
-        setActivityLogs([])
-        setPodFiles([])
-        return
-      } catch (error) {
-        console.error('Error loading offline data:', error)
+      } catch (dbError) {
+        console.error('Error loading offline fallback data:', dbError)
       }
-    }
-
-    const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
-      fetch(`/api/projects?pod_id=${selectedPod.id}`),
-      fetch(`/api/tasks?pod_id=${selectedPod.id}`),
-      fetch(`/api/pods/${selectedPod.id}/members`),
-      fetch(`/api/chat?pod_id=${selectedPod.id}`),
-      fetch(`/api/activity?pod_id=${selectedPod.id}`),
-      fetch(`/api/files?pod_id=${selectedPod.id}`),
-    ])
-
-    const projectsData = projectsRes.ok ? await projectsRes.json() : []
-    const tasksData = tasksRes.ok ? await tasksRes.json() : []
-    const membersData = membersRes.ok ? await membersRes.json() : []
-    const chatData = chatRes.ok ? await chatRes.json() : []
-    const activityData = activityRes.ok ? await activityRes.json() : []
-    const filesData = filesRes.ok ? await filesRes.json() : []
-
-    setProjects(projectsData)
-    setTasks(tasksData)
-    setMembers(membersData)
-    setChatMessages(chatData)
-    setActivityLogs(activityData)
-    setPodFiles(filesData)
-
-    if (isOnline) {
-      cachePodData(selectedPod.id, {
-        pod: selectedPod,
-        role: selectedPod.role,
-        projects: projectsData,
-        tasks: tasksData,
-        members: membersData,
-        chatMessages: chatData,
-      })
     }
   }, [selectedPod, isOnline, cachePodData])
 

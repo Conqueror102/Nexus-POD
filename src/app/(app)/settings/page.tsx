@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
+import { db } from "@/lib/offline-db"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -62,14 +63,43 @@ export default function SettingsPage() {
         return
       }
 
-      const res = await fetch("/api/profile")
-      if (res.ok) {
-        const data = await res.json()
-        setProfile(data)
-        setDisplayName(data.display_name || "")
-        setNotificationEmail(data.notification_email ?? true)
-        setNotificationPush(data.notification_push ?? true)
-        setTimezone(data.timezone || "Africa/Lagos")
+      try {
+        const res = await fetch("/api/profile", { signal: AbortSignal.timeout(10000) })
+        if (res.ok) {
+          const data = await res.json()
+          setProfile(data)
+          setDisplayName(data.display_name || "")
+          setNotificationEmail(data.notification_email ?? true)
+          setNotificationPush(data.notification_push ?? true)
+          setTimezone(data.timezone || "Africa/Lagos")
+          // Cache the profile
+          await db.cachedUser.put({ id: 'current_user', ...data })
+        } else {
+          // Try to load cached profile
+          const cachedUser = await db.cachedUser.get('current_user')
+          if (cachedUser) {
+            setProfile(cachedUser)
+            setDisplayName(cachedUser.display_name || "")
+            setNotificationEmail(cachedUser.notification_email ?? true)
+            setNotificationPush(cachedUser.notification_push ?? true)
+            setTimezone(cachedUser.timezone || "Africa/Lagos")
+          }
+        }
+      } catch (error) {
+        console.warn('Error fetching profile, trying cache:', error)
+        // Try to load cached profile
+        try {
+          const cachedUser = await db.cachedUser.get('current_user')
+          if (cachedUser) {
+            setProfile(cachedUser)
+            setDisplayName(cachedUser.display_name || "")
+            setNotificationEmail(cachedUser.notification_email ?? true)
+            setNotificationPush(cachedUser.notification_push ?? true)
+            setTimezone(cachedUser.timezone || "Africa/Lagos")
+          }
+        } catch (cacheError) {
+          console.error('Error loading cached profile:', cacheError)
+        }
       }
       setLoading(false)
     }
@@ -79,23 +109,36 @@ export default function SettingsPage() {
   async function handleSaveProfile() {
     setSaving(true)
     
-    const res = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        display_name: displayName,
-        notification_email: notificationEmail,
-        notification_push: notificationPush,
-        timezone,
-      }),
-    })
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: displayName,
+          notification_email: notificationEmail,
+          notification_push: notificationPush,
+          timezone,
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
 
-    if (res.ok) {
-      const data = await res.json()
-      setProfile(data)
-      toast.success("Profile updated successfully")
-    } else {
-      toast.error("Failed to update profile")
+      if (res.ok) {
+        const data = await res.json()
+        setProfile(data)
+        // Update cache
+        await db.cachedUser.put({ id: 'current_user', ...data })
+        toast.success("Profile updated successfully")
+      } else {
+        toast.error("Failed to update profile")
+      }
+    } catch (error) {
+      console.warn('Error saving profile:', error)
+      toast.error("Failed to update profile. Changes will sync when online.")
+      // Still update local cache for when we're offline
+      const updatedProfile = { ...profile, display_name: displayName, notification_email: notificationEmail, notification_push: notificationPush, timezone }
+      if (updatedProfile) {
+        await db.cachedUser.put({ id: 'current_user', ...updatedProfile })
+      }
     }
     setSaving(false)
   }
