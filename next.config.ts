@@ -40,10 +40,14 @@ const pwaConfig = withPWA({
   dest: "public",
   register: true,
   skipWaiting: true,
-  disable: process.env.NODE_ENV === "development",
+  // Enable PWA in development mode for offline testing
+  // Set DISABLE_PWA=true to disable it
+  disable: process.env.DISABLE_PWA === "true",
   fallbacks: {
     document: "/offline",
   },
+  // Build exclude patterns to avoid caching issues
+  buildExcludes: [/middleware-manifest\.json$/],
 });
 
 export default pwaConfig(nextConfig);
