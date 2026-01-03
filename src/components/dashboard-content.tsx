@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/auth-provider"
 import Link from "next/link"
@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,18 +16,14 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Progress } from "@/components/ui/progress"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { toast } from "sonner"
 import { 
   Hexagon, Plus, FolderKanban, Users, MessageSquare, LogOut, 
-  ChevronRight, Calendar, CheckCircle2, Circle, Clock, Loader2, Copy, Check,
-  Send, MoreVertical, Trash2, UserMinus, Link as LinkIcon, TrendingUp,
-  AlertTriangle, Target, BarChart3, Activity, Search, Bell, Settings, User, X,
-  Download, Filter, ArrowUpCircle, ArrowRightCircle, ArrowDownCircle,
-  Upload, FileIcon, Image, FileText, Eye, HardDrive
+  Loader2, Copy, Check, Send, MoreVertical, Trash2, Link as LinkIcon,
+  BarChart3, Search, Bell, Settings, User, Download, Filter, HardDrive
 } from "lucide-react"
-import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns"
+import { format, formatDistanceToNow, isPast } from "date-fns"
 import type { PodWithRole, Project, Task, Profile, Notification, ActivityLog, PodFileWithProfile } from "@/lib/types"
 import { SplashScreen } from "@/components/splash-screen"
 import { ErrorBoundary } from "@/components/error-boundary"
@@ -37,7 +32,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -54,39 +48,23 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-interface PodMemberWithProfile {
-  id: string
-  role: 'founder' | 'member'
-  joined_at: string
-  profiles: Profile
-}
-
-interface TaskWithAssignee extends Task {
-  profiles?: Profile | null
-  projects?: { id: string; name: string } | null
-}
-
-interface ChatMessageWithProfile {
-  id: string
-  content: string
-  created_at: string
-  user_id: string
-  profiles: Profile
-}
-
-interface TaskCommentWithProfile {
-  id: string
-  content: string
-  created_at: string
-  user_id: string
-  profiles: Profile
-}
+import {
+  OverviewTab,
+  ProjectsTab,
+  MembersTab,
+  FilesTab,
+  ChatTab,
+  TaskWithAssignee,
+  PodMemberWithProfile,
+  ChatMessageWithProfile,
+  TaskCommentWithProfile,
+  statusColors,
+} from "@/components/dashboard"
 
 export function DashboardContent() {
   const { user, signOut, refreshUser } = useAuth()
   const router = useRouter()
   const supabase = createClient()
-  const chatEndRef = useRef<HTMLDivElement>(null)
   
   const [pods, setPods] = useState<PodWithRole[]>([])
   const [selectedPod, setSelectedPod] = useState<PodWithRole | null>(null)
@@ -100,8 +78,6 @@ export function DashboardContent() {
   const [searchQuery, setSearchQuery] = useState("")
 
   const [createPodOpen, setCreatePodOpen] = useState(false)
-  const [createProjectOpen, setCreateProjectOpen] = useState(false)
-  const [createTaskOpen, setCreateTaskOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [taskDetailOpen, setTaskDetailOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -111,14 +87,6 @@ export function DashboardContent() {
 
   const [newPodTitle, setNewPodTitle] = useState("")
   const [newPodSummary, setNewPodSummary] = useState("")
-  const [newProjectName, setNewProjectName] = useState("")
-  const [newProjectDescription, setNewProjectDescription] = useState("")
-  const [newTaskName, setNewTaskName] = useState("")
-  const [newTaskDescription, setNewTaskDescription] = useState("")
-  const [newTaskDueDate, setNewTaskDueDate] = useState("")
-  const [newTaskAssignee, setNewTaskAssignee] = useState("")
-  const [newTaskPriority, setNewTaskPriority] = useState<"low" | "medium" | "high">("medium")
-  const [selectedProjectId, setSelectedProjectId] = useState("")
   const [newComment, setNewComment] = useState("")
   const [chatMessage, setChatMessage] = useState("")
   const [filterPriority, setFilterPriority] = useState<string>("all")
@@ -126,13 +94,8 @@ export function DashboardContent() {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
   const [showSplash, setShowSplash] = useState(true)
   const [podFiles, setPodFiles] = useState<PodFileWithProfile[]>([])
-  const [uploadingFile, setUploadingFile] = useState(false)
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; mime_type: string | null } | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const [profileDisplayName, setProfileDisplayName] = useState("")
-  const [savingProfile, setSavingProfile] = useState(false)
 
   const [inviteLink, setInviteLink] = useState("")
   const [inviteCopied, setInviteCopied] = useState(false)
@@ -166,24 +129,12 @@ export function DashboardContent() {
   }, [fetchPods, fetchNotifications])
 
   useEffect(() => {
-    if (user) {
-      setProfileDisplayName(user.display_name || "")
-    }
-  }, [user])
-
-  useEffect(() => {
     if (selectedPod) {
       fetchPodData()
     }
   }, [selectedPod])
 
-  useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: "smooth" })
-    }
-  }, [chatMessages])
-
-  async function fetchPodData() {
+  const fetchPodData = useCallback(async () => {
     if (!selectedPod) return
 
     const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
@@ -201,7 +152,7 @@ export function DashboardContent() {
     if (chatRes.ok) setChatMessages(await chatRes.json())
     if (activityRes.ok) setActivityLogs(await activityRes.json())
     if (filesRes.ok) setPodFiles(await filesRes.json())
-  }
+  }, [selectedPod])
 
   useEffect(() => {
     if (!selectedPod || !user) return
@@ -242,7 +193,7 @@ export function DashboardContent() {
       supabase.removeChannel(channel)
       supabase.removeChannel(notifChannel)
     }
-  }, [selectedPod, user, supabase])
+  }, [selectedPod, user, supabase, fetchPodData])
 
   async function handleCreatePod() {
     if (!newPodTitle.trim()) return
@@ -266,60 +217,44 @@ export function DashboardContent() {
     setSubmitting(false)
   }
 
-  async function handleCreateProject() {
-    if (!newProjectName.trim() || !selectedPod) return
-    setSubmitting(true)
+  async function handleCreateProject(name: string, description: string) {
+    if (!selectedPod) return
 
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        pod_id: selectedPod.id, 
-        name: newProjectName, 
-        description: newProjectDescription 
-      }),
+      body: JSON.stringify({ pod_id: selectedPod.id, name, description }),
     })
 
     if (res.ok) {
       const project = await res.json()
       setProjects(prev => [project, ...prev])
-      setCreateProjectOpen(false)
-      setNewProjectName("")
-      setNewProjectDescription("")
       toast.success("Project created successfully!")
     }
-    setSubmitting(false)
   }
 
-  async function handleCreateTask() {
-    if (!newTaskName.trim() || !newTaskDescription.trim() || !newTaskDueDate || !selectedProjectId) return
-    setSubmitting(true)
-
+  async function handleCreateTask(data: {
+    project_id: string
+    name: string
+    description: string
+    due_date: string
+    assigned_to: string
+    priority: "low" | "medium" | "high"
+  }) {
     const res = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        project_id: selectedProjectId,
-        name: newTaskName,
-        description: newTaskDescription,
-        due_date: new Date(newTaskDueDate).toISOString(),
-        assigned_to: newTaskAssignee || null,
-        priority: newTaskPriority,
+      body: JSON.stringify({
+        ...data,
+        due_date: new Date(data.due_date).toISOString(),
+        assigned_to: data.assigned_to || null,
       }),
     })
 
     if (res.ok) {
       fetchPodData()
-      setCreateTaskOpen(false)
-      setNewTaskName("")
-      setNewTaskDescription("")
-      setNewTaskDueDate("")
-      setNewTaskAssignee("")
-      setNewTaskPriority("medium")
-      setSelectedProjectId("")
       toast.success("Task created successfully!")
     }
-    setSubmitting(false)
   }
 
   async function handleCreateInvite() {
@@ -416,24 +351,6 @@ export function DashboardContent() {
     toast.success("Pod deleted")
   }
 
-  async function handleSaveProfile() {
-    setSavingProfile(true)
-    const res = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name: profileDisplayName }),
-    })
-
-    if (res.ok) {
-      toast.success("Profile updated successfully!")
-      refreshUser()
-      setSettingsOpen(false)
-    } else {
-      toast.error("Failed to update profile")
-    }
-    setSavingProfile(false)
-  }
-
   async function handleMarkAllNotificationsRead() {
     await fetch("/api/notifications", {
       method: "PATCH",
@@ -450,32 +367,6 @@ export function DashboardContent() {
       body: JSON.stringify({ notification_id: id }),
     })
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
-  }
-
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !selectedPod) return
-
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error("File size exceeds 25MB limit")
-      return
-    }
-
-    setUploadingFile(true)
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("pod_id", selectedPod.id)
-
-    const res = await fetch("/api/files", { method: "POST", body: formData })
-    if (res.ok) {
-      toast.success("File uploaded successfully!")
-      fetchPodData()
-    } else {
-      const err = await res.json()
-      toast.error(err.error || "Failed to upload file")
-    }
-    setUploadingFile(false)
-    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   async function handleFileDelete(fileId: string) {
@@ -513,68 +404,6 @@ export function DashboardContent() {
     }
   }
 
-  function formatFileSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  }
-
-  function getFileIcon(mimeType: string | null) {
-    if (mimeType?.startsWith("image/")) return Image
-    if (mimeType === "application/pdf") return FileText
-    return FileIcon
-  }
-
-  const statusColors = {
-    not_started: "bg-slate-500 dark:bg-slate-500",
-    ongoing: "bg-amber-500",
-    completed: "bg-emerald-500",
-  }
-
-  const statusLabels = {
-    not_started: "Not Started",
-    ongoing: "Ongoing",
-    completed: "Completed",
-  }
-
-  const priorityColors = {
-    low: "text-blue-500",
-    medium: "text-amber-500",
-    high: "text-red-500",
-  }
-
-  const priorityIcons = {
-    low: ArrowDownCircle,
-    medium: ArrowRightCircle,
-    high: ArrowUpCircle,
-  }
-
-  const isFounder = selectedPod?.role === "founder"
-  const myTasks = tasks.filter(t => t.assigned_to === user?.id)
-  const completedTasks = tasks.filter(t => t.status === "completed")
-  const ongoingTasks = tasks.filter(t => t.status === "ongoing")
-  const notStartedTasks = tasks.filter(t => t.status === "not_started")
-  const overdueTasks = tasks.filter(t => t.status !== "completed" && isPast(new Date(t.due_date)))
-  const upcomingTasks = tasks.filter(t => t.status !== "completed" && !isPast(new Date(t.due_date)))
-    .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
-  const completionRate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0
-
-  const filteredTasks = tasks.filter(t => {
-    const matchesSearch = !searchQuery || 
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesPriority = filterPriority === "all" || t.priority === filterPriority
-    const matchesStatus = filterStatus === "all" || t.status === filterStatus
-    return matchesSearch && matchesPriority && matchesStatus
-  })
-
-  const filteredProjects = searchQuery
-    ? projects.filter(p => 
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-      )
-    : projects
-
   async function handleExport(format: "json" | "csv") {
     if (!selectedPod) return
     const res = await fetch(`/api/export?pod_id=${selectedPod.id}&format=${format}`)
@@ -601,6 +430,8 @@ export function DashboardContent() {
     }
   }
 
+  const isFounder = selectedPod?.role === "founder"
+
   if (showSplash) {
     return <SplashScreen onComplete={() => setShowSplash(false)} />
   }
@@ -615,166 +446,164 @@ export function DashboardContent() {
 
   return (
     <ErrorBoundary>
-    <div className="min-h-screen bg-background">
-      <div className="flex">
-        <aside className="w-72 min-h-screen border-r bg-card/50 backdrop-blur-sm flex flex-col">
-          <div className="p-4 border-b">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="relative">
-                <Hexagon className="w-8 h-8 text-primary fill-primary/10" strokeWidth={1.5} />
-                <span className="absolute inset-0 flex items-center justify-center text-primary font-bold text-xs">N</span>
-              </div>
-              <span className="text-lg font-semibold tracking-tight">Nexus Pod</span>
-            </Link>
-          </div>
-
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Your Pods</span>
-              <Dialog open={createPodOpen} onOpenChange={setCreatePodOpen}>
-                <DialogTrigger asChild>
-                  <Button size="icon" variant="ghost" className="h-6 w-6">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Pod</DialogTitle>
-                    <DialogDescription>
-                      Start a new workspace for your team
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label>Pod Title</Label>
-                      <Input
-                        value={newPodTitle}
-                        onChange={(e) => setNewPodTitle(e.target.value)}
-                        placeholder="My Awesome Project"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Summary (optional)</Label>
-                      <Textarea
-                        value={newPodSummary}
-                        onChange={(e) => setNewPodSummary(e.target.value)}
-                        placeholder="Brief description of your pod..."
-                        className="resize-none"
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={handleCreatePod} disabled={submitting || !newPodTitle.trim()}>
-                      {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      Create Pod
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+      <div className="min-h-screen bg-background">
+        <div className="flex">
+          <aside className="w-72 min-h-screen border-r bg-card/50 backdrop-blur-sm flex flex-col">
+            <div className="p-4 border-b">
+              <Link href="/" className="flex items-center gap-2">
+                <div className="relative">
+                  <Hexagon className="w-8 h-8 text-primary fill-primary/10" strokeWidth={1.5} />
+                  <span className="absolute inset-0 flex items-center justify-center text-primary font-bold text-xs">N</span>
+                </div>
+                <span className="text-lg font-semibold tracking-tight">Nexus Pod</span>
+              </Link>
             </div>
 
-            <ScrollArea className="h-48">
-              <div className="space-y-1">
-                {pods.map((pod) => (
-                  <button
-                    key={pod.id}
-                    onClick={() => setSelectedPod(pod)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                      selectedPod?.id === pod.id 
-                        ? "bg-primary/10 text-primary" 
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-medium">
-                      {pod.title.substring(0, 2).toUpperCase()}
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Your Pods</span>
+                <Dialog open={createPodOpen} onOpenChange={setCreatePodOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="icon" variant="ghost" className="h-6 w-6">
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New Pod</DialogTitle>
+                      <DialogDescription>Start a new workspace for your team</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>Pod Title</Label>
+                        <Input
+                          value={newPodTitle}
+                          onChange={(e) => setNewPodTitle(e.target.value)}
+                          placeholder="My Awesome Project"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Summary (optional)</Label>
+                        <Textarea
+                          value={newPodSummary}
+                          onChange={(e) => setNewPodSummary(e.target.value)}
+                          placeholder="Brief description of your pod..."
+                          className="resize-none"
+                          rows={3}
+                        />
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{pod.title}</p>
-                      <p className="text-xs text-muted-foreground">{pod.npn}</p>
-                    </div>
-                    {pod.role === "founder" && (
-                      <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0">
-                        Founder
-                      </Badge>
-                    )}
-                  </button>
-                ))}
-                {pods.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">No pods yet</p>
-                )}
-              </div>
-            </ScrollArea>
-          </div>
-
-          <Separator />
-
-          <div className="flex-1" />
-
-          <div className="p-4 border-t">
-            <div className="flex items-center gap-3">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={user?.avatar_url || undefined} />
-                <AvatarFallback>
-                  {user?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user?.display_name}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-              </div>
-              
-              <Popover open={notificationsOpen} onOpenChange={setNotificationsOpen}>
-                <PopoverTrigger asChild>
-                  <Button size="icon" variant="ghost" className="relative">
-                    <Bell className="w-4 h-4" />
-                    {unreadNotifications.length > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] rounded-full flex items-center justify-center">
-                        {unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}
-                      </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="end">
-                  <div className="flex items-center justify-between p-3 border-b">
-                    <h4 className="font-semibold text-sm">Notifications</h4>
-                    {unreadNotifications.length > 0 && (
-                      <Button variant="ghost" size="sm" onClick={handleMarkAllNotificationsRead} className="text-xs h-auto py-1">
-                        Mark all read
+                    <DialogFooter>
+                      <Button onClick={handleCreatePod} disabled={submitting || !newPodTitle.trim()}>
+                        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                        Create Pod
                       </Button>
-                    )}
-                  </div>
-                  <ScrollArea className="h-72">
-                    {notifications.length > 0 ? (
-                      <div className="divide-y">
-                        {notifications.slice(0, 20).map((notification) => (
-                          <button
-                            key={notification.id}
-                            onClick={() => handleMarkNotificationRead(notification.id)}
-                            className={`w-full p-3 text-left hover:bg-muted transition-colors ${!notification.is_read ? 'bg-primary/5' : ''}`}
-                          >
-                            <div className="flex gap-3">
-                              <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.is_read ? 'bg-primary' : 'bg-transparent'}`} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{notification.title}</p>
-                                <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
-                                </p>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <ScrollArea className="h-48">
+                <div className="space-y-1">
+                  {pods.map((pod) => (
+                    <button
+                      key={pod.id}
+                      onClick={() => setSelectedPod(pod)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                        selectedPod?.id === pod.id 
+                          ? "bg-primary/10 text-primary" 
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-medium">
+                        {pod.title.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{pod.title}</p>
+                        <p className="text-xs text-muted-foreground">{pod.npn}</p>
+                      </div>
+                      {pod.role === "founder" && (
+                        <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-0">
+                          Founder
+                        </Badge>
+                      )}
+                    </button>
+                  ))}
+                  {pods.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">No pods yet</p>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+
+            <Separator />
+
+            <div className="flex-1" />
+
+            <div className="p-4 border-t">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={user?.avatar_url || undefined} />
+                  <AvatarFallback>
+                    {user?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{user?.display_name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                </div>
+                
+                <Popover open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+                  <PopoverTrigger asChild>
+                    <Button size="icon" variant="ghost" className="relative">
+                      <Bell className="w-4 h-4" />
+                      {unreadNotifications.length > 0 && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] rounded-full flex items-center justify-center">
+                          {unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0" align="end">
+                    <div className="flex items-center justify-between p-3 border-b">
+                      <h4 className="font-semibold text-sm">Notifications</h4>
+                      {unreadNotifications.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={handleMarkAllNotificationsRead} className="text-xs h-auto py-1">
+                          Mark all read
+                        </Button>
+                      )}
+                    </div>
+                    <ScrollArea className="h-72">
+                      {notifications.length > 0 ? (
+                        <div className="divide-y">
+                          {notifications.slice(0, 20).map((notification) => (
+                            <button
+                              key={notification.id}
+                              onClick={() => handleMarkNotificationRead(notification.id)}
+                              className={`w-full p-3 text-left hover:bg-muted transition-colors ${!notification.is_read ? 'bg-primary/5' : ''}`}
+                            >
+                              <div className="flex gap-3">
+                                <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!notification.is_read ? 'bg-primary' : 'bg-transparent'}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium">{notification.title}</p>
+                                  <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-8">
-                        <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
-                        <p className="text-sm text-muted-foreground">No notifications yet</p>
-                      </div>
-                    )}
-                  </ScrollArea>
-                </PopoverContent>
-              </Popover>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-8">
+                          <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
+                          <p className="text-sm text-muted-foreground">No notifications yet</p>
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
 
                 <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
                   <SheetTrigger asChild>
@@ -841,27 +670,25 @@ export function DashboardContent() {
                     </div>
                   </SheetContent>
                 </Sheet>
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
 
-        <main className="flex-1 p-6">
-          {selectedPod ? (
-            <>
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-semibold">{selectedPod.title}</h1>
-                    <Badge variant="outline">
-                      {selectedPod.npn}
-                    </Badge>
+          <main className="flex-1 p-6">
+            {selectedPod ? (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-2xl font-semibold">{selectedPod.title}</h1>
+                      <Badge variant="outline">{selectedPod.npn}</Badge>
+                    </div>
+                    {selectedPod.summary && (
+                      <p className="text-muted-foreground mt-1">{selectedPod.summary}</p>
+                    )}
                   </div>
-                  {selectedPod.summary && (
-                    <p className="text-muted-foreground mt-1">{selectedPod.summary}</p>
-                  )}
-                </div>
 
-                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
@@ -909,60 +736,55 @@ export function DashboardContent() {
                       </DropdownMenuContent>
                     </DropdownMenu>
 
-                  {isFounder && (
-                    <>
-                      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline">
-                            <Users className="w-4 h-4 mr-2" />
-                            Invite
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Invite Team Members</DialogTitle>
-                            <DialogDescription>
-                              Share this link with people you want to invite
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            {inviteLink ? (
-                              <div className="flex gap-2">
-                                <Input
-                                  value={inviteLink}
-                                  readOnly
-                                />
-                                <Button onClick={copyInviteLink} variant="secondary">
-                                  {inviteCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {isFounder && (
+                      <>
+                        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+                          <DialogTrigger asChild>
+                            <Button variant="outline">
+                              <Users className="w-4 h-4 mr-2" />
+                              Invite
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Invite Team Members</DialogTitle>
+                              <DialogDescription>Share this link with people you want to invite</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              {inviteLink ? (
+                                <div className="flex gap-2">
+                                  <Input value={inviteLink} readOnly />
+                                  <Button onClick={copyInviteLink} variant="secondary">
+                                    {inviteCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button onClick={handleCreateInvite} disabled={submitting} className="w-full">
+                                  {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LinkIcon className="w-4 h-4 mr-2" />}
+                                  Generate Invite Link
                                 </Button>
-                              </div>
-                            ) : (
-                              <Button onClick={handleCreateInvite} disabled={submitting} className="w-full">
-                                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LinkIcon className="w-4 h-4 mr-2" />}
-                                Generate Invite Link
-                              </Button>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                              )}
+                            </div>
+                          </DialogContent>
+                        </Dialog>
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={handleDeletePod} className="text-destructive focus:text-destructive">
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete Pod
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </>
-                  )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={handleDeletePod} className="text-destructive focus:text-destructive">
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Pod
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                   <TabsList>
@@ -988,818 +810,175 @@ export function DashboardContent() {
                     </TabsTrigger>
                   </TabsList>
 
-                <TabsContent value="overview" className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-                      <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Total Tasks</CardTitle>
-                        <Target className="w-4 h-4 text-primary" />
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-3xl font-bold">{tasks.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {completedTasks.length} completed
-                        </p>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20">
-                      <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Completion Rate</CardTitle>
-                        <TrendingUp className="w-4 h-4 text-emerald-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-3xl font-bold">{completionRate}%</p>
-                        <Progress value={completionRate} className="mt-2 h-2" />
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-amber-500/20">
-                      <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">In Progress</CardTitle>
-                        <Activity className="w-4 h-4 text-amber-500" />
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-3xl font-bold text-amber-600 dark:text-amber-500">{ongoingTasks.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {notStartedTasks.length} not started
-                        </p>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card className={`bg-gradient-to-br ${overdueTasks.length > 0 ? "from-destructive/10 to-destructive/5 border-destructive/20" : "from-muted to-muted/50"}`}>
-                      <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
-                        <AlertTriangle className={`w-4 h-4 ${overdueTasks.length > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-                      </CardHeader>
-                      <CardContent>
-                        <p className={`text-3xl font-bold ${overdueTasks.length > 0 ? "text-destructive" : ""}`}>
-                          {overdueTasks.length}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          tasks need attention
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card className="col-span-1 hover:shadow-md transition-shadow">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <div className="w-3 h-3 rounded-full bg-slate-500" />
-                          Not Started
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-4xl font-bold">{notStartedTasks.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">tasks pending</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="col-span-1 hover:shadow-md transition-shadow">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <div className="w-3 h-3 rounded-full bg-amber-500" />
-                          Ongoing
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-4xl font-bold text-amber-600 dark:text-amber-500">{ongoingTasks.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">in progress</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="col-span-1 hover:shadow-md transition-shadow">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                          Completed
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-4xl font-bold text-emerald-600 dark:text-emerald-500">{completedTasks.length}</p>
-                        <p className="text-xs text-muted-foreground mt-1">tasks done</p>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-primary" />
-                          My Tasks
-                        </CardTitle>
-                        <CardDescription>Tasks assigned to you ({myTasks.length})</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-72">
-                          {myTasks.length > 0 ? (
-                            <div className="space-y-2">
-                              {myTasks.map((task) => (
-                                <button
-                                  key={task.id}
-                                  onClick={() => openTaskDetail(task)}
-                                  className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
-                                >
-                                  <div className={`w-2 h-2 rounded-full ${statusColors[task.status]}`} />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{task.name}</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
-                                          <Calendar className="w-3 h-3 inline mr-1" />
-                                          {format(new Date(task.due_date), "MMM d, yyyy")}
-                                        </span>
-                                        {task.priority && (
-                                          <span className={`text-xs ${priorityColors[task.priority]}`}>
-                                            {(() => { const Icon = priorityIcons[task.priority]; return <Icon className="w-3 h-3 inline" />; })()}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <Badge className={statusColors[task.status]} variant="secondary">
-                                      {statusLabels[task.status]}
-                                    </Badge>
-                                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center justify-center py-8 text-center">
-                                <CheckCircle2 className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                                <p className="text-sm text-muted-foreground">No tasks assigned to you</p>
-                              </div>
-                            )}
-                          </ScrollArea>
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-amber-500" />
-                            Upcoming Deadlines
-                          </CardTitle>
-                          <CardDescription>Tasks due soon ({upcomingTasks.length})</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <ScrollArea className="h-72">
-                            {upcomingTasks.length > 0 ? (
-                              <div className="space-y-2">
-                                {upcomingTasks.slice(0, 10).map((task) => {
-                                  const daysUntil = differenceInDays(new Date(task.due_date), new Date())
-                                  const PriorityIcon = priorityIcons[task.priority || "medium"]
-                                  return (
-                                    <button
-                                      key={task.id}
-                                      onClick={() => openTaskDetail(task)}
-                                      className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
-                                    >
-                                      <div className={`w-2 h-2 rounded-full ${statusColors[task.status]}`} />
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <p className="text-sm font-medium truncate">{task.name}</p>
-                                          <PriorityIcon className={`w-3 h-3 flex-shrink-0 ${priorityColors[task.priority || "medium"]}`} />
-                                        </div>
-                                        <p className="text-xs text-muted-foreground truncate">{task.projects?.name}</p>
-                                      </div>
-                                      <Badge variant={daysUntil <= 1 ? "destructive" : daysUntil <= 3 ? "secondary" : "outline"}>
-                                        {daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `${daysUntil} days`}
-                                      </Badge>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            ) : (
-                              <div className="flex flex-col items-center justify-center py-8 text-center">
-                                <Calendar className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                                <p className="text-sm text-muted-foreground">No upcoming deadlines</p>
-                            </div>
-                          )}
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {overdueTasks.length > 0 && (
-                    <Card className="border-destructive/50 bg-destructive/5">
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-destructive">
-                          <AlertTriangle className="w-5 h-5" />
-                          Overdue Tasks
-                        </CardTitle>
-                        <CardDescription>These tasks need immediate attention</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {overdueTasks.map((task) => (
-                            <button
-                              key={task.id}
-                              onClick={() => openTaskDetail(task)}
-                              className="w-full flex items-center gap-3 p-3 rounded-lg bg-background hover:bg-muted transition-colors text-left"
-                            >
-                              <div className={`w-2 h-2 rounded-full ${statusColors[task.status]}`} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{task.name}</p>
-                                <p className="text-xs text-muted-foreground">{task.projects?.name}</p>
-                              </div>
-                              <span className="text-xs text-destructive">
-                                Due {formatDistanceToNow(new Date(task.due_date), { addSuffix: true })}
-                              </span>
-                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-primary" />
-                        Recent Activity
-                      </CardTitle>
-                      <CardDescription>Latest updates in this pod</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-64">
-                          <div className="space-y-4">
-                            {activityLogs.length > 0 ? activityLogs.slice(0, 12).map((activity) => (
-                              <div key={activity.id} className="flex items-start gap-3">
-                                <Avatar className="h-6 w-6">
-                                  <AvatarImage src={activity.profiles?.avatar_url || undefined} />
-                                  <AvatarFallback className="text-xs">
-                                    {activity.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1">
-                                  <p className="text-sm">
-                                    <span className="font-medium">{activity.profiles?.display_name || "User"}</span>
-                                    {" "}{activity.action}{" "}
-                                    {activity.entity_name && <span className="text-primary">{activity.entity_name}</span>}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
-                                  </p>
-                                </div>
-                                <Badge variant="outline" className="text-xs">
-                                  {activity.entity_type}
-                                </Badge>
-                              </div>
-                            )) : tasks.slice(0, 8).map((task) => (
-                              <div key={task.id} className="flex items-start gap-3">
-                                <div className={`w-2 h-2 rounded-full mt-2 ${statusColors[task.status]}`} />
-                                <div className="flex-1">
-                                  <p className="text-sm">
-                                    <span className="font-medium">{task.name}</span>
-                                    {" "}in{" "}
-                                    <span className="text-primary">{task.projects?.name}</span>
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
-                                  </p>
-                                </div>
-                                <Badge variant="outline" className="text-xs">
-                                  {statusLabels[task.status]}
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
+                  <TabsContent value="overview" className="space-y-6">
+                    <OverviewTab
+                      tasks={tasks}
+                      activityLogs={activityLogs}
+                      user={user}
+                      onTaskClick={openTaskDetail}
+                    />
                   </TabsContent>
 
-                <TabsContent value="projects" className="space-y-6">
-                  {isFounder && (
-                    <div className="flex justify-end gap-2">
-                      <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
-                        <DialogTrigger asChild>
-                          <Button>
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Project
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create New Project</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                              <Label>Project Name</Label>
-                              <Input
-                                value={newProjectName}
-                                onChange={(e) => setNewProjectName(e.target.value)}
-                                placeholder="Project name"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Description</Label>
-                              <Textarea
-                                value={newProjectDescription}
-                                onChange={(e) => setNewProjectDescription(e.target.value)}
-                                placeholder="Project description..."
-                                className="resize-none"
-                                rows={3}
-                              />
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button onClick={handleCreateProject} disabled={submitting || !newProjectName.trim()}>
-                              Create Project
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
+                  <TabsContent value="projects" className="space-y-6">
+                    <ProjectsTab
+                      projects={projects}
+                      tasks={tasks}
+                      members={members}
+                      isFounder={isFounder}
+                      searchQuery={searchQuery}
+                      filterPriority={filterPriority}
+                      filterStatus={filterStatus}
+                      onTaskClick={openTaskDetail}
+                      onUpdateTaskStatus={handleUpdateTaskStatus}
+                      onCreateProject={handleCreateProject}
+                      onCreateTask={handleCreateTask}
+                    />
+                  </TabsContent>
 
-                      <Dialog open={createTaskOpen} onOpenChange={setCreateTaskOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="outline">
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Task
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create New Task</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                              <Label>Project</Label>
-                              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select project" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {projects.map((p) => (
-                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Task Name</Label>
-                              <Input
-                                value={newTaskName}
-                                onChange={(e) => setNewTaskName(e.target.value)}
-                                placeholder="Task name"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Description</Label>
-                              <Textarea
-                                value={newTaskDescription}
-                                onChange={(e) => setNewTaskDescription(e.target.value)}
-                                placeholder="Task description..."
-                                className="resize-none"
-                                rows={3}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Due Date</Label>
-                                <Input
-                                  type="datetime-local"
-                                  value={newTaskDueDate}
-                                  onChange={(e) => setNewTaskDueDate(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Priority</Label>
-                                <Select value={newTaskPriority} onValueChange={(v) => setNewTaskPriority(v as "low" | "medium" | "high")}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select priority" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="low">
-                                      <div className="flex items-center gap-2">
-                                        <ArrowDownCircle className="w-4 h-4 text-blue-500" />
-                                        Low
-                                      </div>
-                                    </SelectItem>
-                                    <SelectItem value="medium">
-                                      <div className="flex items-center gap-2">
-                                        <ArrowRightCircle className="w-4 h-4 text-amber-500" />
-                                        Medium
-                                      </div>
-                                    </SelectItem>
-                                    <SelectItem value="high">
-                                      <div className="flex items-center gap-2">
-                                        <ArrowUpCircle className="w-4 h-4 text-red-500" />
-                                        High
-                                      </div>
-                                    </SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Assign To</Label>
-                              <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select member" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {members.map((m) => (
-                                    <SelectItem key={m.profiles.id} value={m.profiles.id}>
-                                      {m.profiles.display_name || m.profiles.email}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button onClick={handleCreateTask} disabled={submitting || !newTaskName.trim() || !selectedProjectId}>
-                              Create Task
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  )}
-
-                  {filteredProjects.length > 0 ? (
-                    <div className="space-y-6">
-                      {filteredProjects.map((project) => {
-                        const projectTasks = filteredTasks.filter(t => t.project_id === project.id)
-                        const projectCompleted = projectTasks.filter(t => t.status === "completed").length
-                        const projectProgress = projectTasks.length > 0 ? Math.round((projectCompleted / projectTasks.length) * 100) : 0
-                        
-                        return (
-                          <Card key={project.id}>
-                            <CardHeader>
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <CardTitle>{project.name}</CardTitle>
-                                  {project.description && (
-                                    <CardDescription className="mt-1">{project.description}</CardDescription>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <Badge variant="secondary">
-                                    {projectTasks.length} tasks
-                                  </Badge>
-                                  <div className="flex items-center gap-2 mt-2">
-                                    <Progress value={projectProgress} className="w-24 h-2" />
-                                    <span className="text-xs text-muted-foreground">{projectProgress}%</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            <CardContent>
-                              {projectTasks.length > 0 ? (
-                                <div className="space-y-2">
-                                  {projectTasks.map((task) => (
-                                    <button
-                                      key={task.id}
-                                      onClick={() => openTaskDetail(task)}
-                                      className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
-                                    >
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          const nextStatus = task.status === "not_started" ? "ongoing" : task.status === "ongoing" ? "completed" : "not_started"
-                                          handleUpdateTaskStatus(task.id, nextStatus)
-                                        }}
-                                        className="flex-shrink-0"
-                                      >
-                                        {task.status === "completed" ? (
-                                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                                        ) : task.status === "ongoing" ? (
-                                          <Clock className="w-5 h-5 text-amber-500" />
-                                        ) : (
-                                          <Circle className="w-5 h-5 text-muted-foreground" />
-                                        )}
-                                      </button>
-                                      <div className="flex-1 min-w-0">
-                                        <p className={`text-sm font-medium ${task.status === "completed" ? "text-muted-foreground line-through" : ""}`}>
-                                          {task.name}
-                                        </p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                          <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
-                                            <Calendar className="w-3 h-3 inline mr-1" />
-                                            {format(new Date(task.due_date), "MMM d")}
-                                          </span>
-                                          {task.profiles && (
-                                            <span className="text-xs text-muted-foreground">
-                                              <Users className="w-3 h-3 inline mr-1" />
-                                              {task.profiles.display_name || task.profiles.email}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <Badge variant="outline">
-                                        {statusLabels[task.status]}
-                                      </Badge>
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-sm text-muted-foreground text-center py-4">No tasks in this project</p>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <Card>
-                      <CardContent className="py-12 text-center">
-                        <FolderKanban className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
-                        <h3 className="text-lg font-medium mb-2">
-                          {searchQuery ? "No projects found" : "No projects yet"}
-                        </h3>
-                        <p className="text-muted-foreground mb-4">
-                          {searchQuery ? "Try a different search term" : "Create your first project to start organizing tasks"}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="members" className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Team Members</CardTitle>
-                      <CardDescription>{members.length} members in this pod</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        {members.map((member) => (
-                          <div key={member.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                            <div className="flex items-center gap-3">
-                              <Avatar>
-                                <AvatarImage src={member.profiles.avatar_url || undefined} />
-                                <AvatarFallback>
-                                  {member.profiles.display_name?.substring(0, 2).toUpperCase() || "U"}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <p className="text-sm font-medium">
-                                  {member.profiles.display_name || member.profiles.email}
-                                </p>
-                                <p className="text-xs text-muted-foreground">{member.profiles.email}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={member.role === "founder" ? "default" : "secondary"}>
-                                {member.role === "founder" ? "Founder" : "Member"}
-                              </Badge>
-                              {isFounder && member.role !== "founder" && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={() => handleRemoveMember(member.profiles.id)}
-                                  className="text-muted-foreground hover:text-destructive"
-                                >
-                                  <UserMinus className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      </CardContent>
-                    </Card>
+                  <TabsContent value="members" className="space-y-6">
+                    <MembersTab
+                      members={members}
+                      isFounder={isFounder}
+                      onRemoveMember={handleRemoveMember}
+                    />
                   </TabsContent>
 
                   <TabsContent value="files" className="space-y-4">
-                    <Card>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle>Files</CardTitle>
-                            <CardDescription>
-                              {formatFileSize(selectedPod?.storage_used_bytes || 0)} / 1 GB used
-                            </CardDescription>
-                          </div>
-                          <div>
-                            <input
-                              type="file"
-                              ref={fileInputRef}
-                              onChange={handleFileUpload}
-                              className="hidden"
-                              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
-                            />
-                            <Button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}>
-                              {uploadingFile ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                              Upload File
-                            </Button>
-                          </div>
-                        </div>
-                        <Progress value={((selectedPod?.storage_used_bytes || 0) / (1024 * 1024 * 1024)) * 100} className="h-2 mt-2" />
-                      </CardHeader>
-                      <CardContent>
-                        {podFiles.length > 0 ? (
-                          <div className="space-y-2">
-                            {podFiles.map((file) => {
-                              const FileIconComponent = getFileIcon(file.mime_type)
-                              const canPreview = file.mime_type?.startsWith("image/") || file.mime_type === "application/pdf"
-                              return (
-                                <div key={file.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-10 h-10 rounded-lg bg-background flex items-center justify-center">
-                                      <FileIconComponent className="w-5 h-5 text-muted-foreground" />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium truncate">{file.name}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {formatFileSize(file.size_bytes)} · {file.profiles?.display_name || "Unknown"} · {formatDistanceToNow(new Date(file.created_at), { addSuffix: true })}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    {canPreview && (
-                                      <Button variant="ghost" size="icon" onClick={() => handleFilePreview(file)}>
-                                        <Eye className="w-4 h-4" />
-                                      </Button>
-                                    )}
-                                    <Button variant="ghost" size="icon" onClick={() => handleFileDownload(file)}>
-                                      <Download className="w-4 h-4" />
-                                    </Button>
-                                    {(isFounder || file.uploaded_by === user?.id) && (
-                                      <Button variant="ghost" size="icon" onClick={() => handleFileDelete(file.id)} className="text-muted-foreground hover:text-destructive">
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <HardDrive className="w-12 h-12 text-muted-foreground/50 mb-4" />
-                            <h3 className="text-lg font-medium mb-2">No files yet</h3>
-                            <p className="text-muted-foreground text-sm mb-4">Upload files to share with your team (max 25MB each)</p>
-                            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-                              <Upload className="w-4 h-4 mr-2" />
-                              Upload First File
-                            </Button>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                    <FilesTab
+                      selectedPod={selectedPod}
+                      podFiles={podFiles}
+                      isFounder={isFounder}
+                      user={user}
+                      onFilePreview={handleFilePreview}
+                      onFileDownload={handleFileDownload}
+                      onFileDelete={handleFileDelete}
+                      fetchPodData={fetchPodData}
+                    />
                   </TabsContent>
 
                   <TabsContent value="chat" className="space-y-4">
-                  <Card className="h-[calc(100vh-280px)] flex flex-col">
-                    <CardHeader className="pb-3">
-                      <CardTitle>Pod Chat</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex flex-col min-h-0">
-                      <ScrollArea className="flex-1 pr-4">
-                        <div className="space-y-4">
-                          {chatMessages.map((msg) => (
-                            <div key={msg.id} className={`flex gap-3 ${msg.user_id === user?.id ? "flex-row-reverse" : ""}`}>
-                              <Avatar className="h-8 w-8 flex-shrink-0">
-                                <AvatarImage src={msg.profiles?.avatar_url || undefined} />
-                                <AvatarFallback className="text-xs">
-                                  {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className={`max-w-[70%] ${msg.user_id === user?.id ? "text-right" : ""}`}>
-                                <div className={`rounded-lg px-3 py-2 ${msg.user_id === user?.id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                                  <p className="text-sm">{msg.content}</p>
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {msg.profiles?.display_name} · {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                          <div ref={chatEndRef} />
-                        </div>
-                      </ScrollArea>
-                      <div className="flex gap-2 pt-4 mt-4 border-t">
-                        <Input
-                          value={chatMessage}
-                          onChange={(e) => setChatMessage(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendChat()}
-                          placeholder="Type a message..."
-                        />
-                        <Button onClick={handleSendChat} disabled={!chatMessage.trim()}>
-                          <Send className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
+                    <ChatTab
+                      chatMessages={chatMessages}
+                      user={user}
+                      chatMessage={chatMessage}
+                      onChatMessageChange={setChatMessage}
+                      onSendChat={handleSendChat}
+                    />
+                  </TabsContent>
+                </Tabs>
 
-              <Dialog open={taskDetailOpen} onOpenChange={setTaskDetailOpen}>
-                <DialogContent className="max-w-2xl">
-                  {selectedTask && (
-                    <>
-                      <DialogHeader>
-                        <div className="flex items-center gap-3">
-                          <div className={`w-3 h-3 rounded-full ${statusColors[selectedTask.status]}`} />
-                          <DialogTitle>{selectedTask.name}</DialogTitle>
-                        </div>
-                        <DialogDescription>
-                          {selectedTask.projects?.name}
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Description</h4>
-                          <p className="text-muted-foreground">{selectedTask.description}</p>
-                        </div>
-                        <div className="flex gap-4 flex-wrap">
-                          <div>
-                            <h4 className="text-sm font-medium mb-1">Due Date</h4>
-                            <p className={`text-sm ${isPast(new Date(selectedTask.due_date)) && selectedTask.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
-                              {format(new Date(selectedTask.due_date), "PPpp")}
-                            </p>
+                <Dialog open={taskDetailOpen} onOpenChange={setTaskDetailOpen}>
+                  <DialogContent className="max-w-2xl">
+                    {selectedTask && (
+                      <>
+                        <DialogHeader>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-3 h-3 rounded-full ${statusColors[selectedTask.status]}`} />
+                            <DialogTitle>{selectedTask.name}</DialogTitle>
                           </div>
+                          <DialogDescription>{selectedTask.projects?.name}</DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
                           <div>
-                            <h4 className="text-sm font-medium mb-1">Status</h4>
-                            <Select
-                              value={selectedTask.status}
-                              onValueChange={(val) => {
-                                handleUpdateTaskStatus(selectedTask.id, val)
-                                setSelectedTask({ ...selectedTask, status: val as Task["status"] })
-                              }}
-                              disabled={!isFounder && selectedTask.assigned_to !== user?.id}
-                            >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="not_started">Not Started</SelectItem>
-                                <SelectItem value="ongoing">Ongoing</SelectItem>
-                                <SelectItem value="completed">Completed</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <h4 className="text-sm font-medium mb-2">Description</h4>
+                            <p className="text-muted-foreground">{selectedTask.description}</p>
                           </div>
-                          <div>
-                            <h4 className="text-sm font-medium mb-1">Assignee</h4>
-                            <p className="text-sm text-muted-foreground">
-                              {selectedTask.profiles?.display_name || selectedTask.profiles?.email || "Unassigned"}
-                            </p>
-                          </div>
-                        </div>
-                        <Separator />
-                        <div>
-                          <h4 className="text-sm font-medium mb-3">Comments</h4>
-                          <ScrollArea className="h-48 pr-4">
-                            <div className="space-y-3">
-                              {taskComments.map((comment) => (
-                                <div key={comment.id} className="flex gap-3">
-                                  <Avatar className="h-8 w-8">
-                                    <AvatarImage src={comment.profiles?.avatar_url || undefined} />
-                                    <AvatarFallback className="text-xs">
-                                      {comment.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium">{comment.profiles?.display_name}</span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                                      </span>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground mt-1">{comment.content}</p>
-                                  </div>
-                                </div>
-                              ))}
-                              {taskComments.length === 0 && (
-                                <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>
-                              )}
+                          <div className="flex gap-4 flex-wrap">
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Due Date</h4>
+                              <p className={`text-sm ${isPast(new Date(selectedTask.due_date)) && selectedTask.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
+                                {format(new Date(selectedTask.due_date), "PPpp")}
+                              </p>
                             </div>
-                          </ScrollArea>
-                          <div className="flex gap-2 mt-4">
-                            <Input
-                              value={newComment}
-                              onChange={(e) => setNewComment(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAddComment()}
-                              placeholder="Add a comment..."
-                            />
-                            <Button onClick={handleAddComment} disabled={submitting || !newComment.trim()}>
-                              <Send className="w-4 h-4" />
-                            </Button>
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Status</h4>
+                              <Select
+                                value={selectedTask.status}
+                                onValueChange={(val) => {
+                                  handleUpdateTaskStatus(selectedTask.id, val)
+                                  setSelectedTask({ ...selectedTask, status: val as Task["status"] })
+                                }}
+                                disabled={!isFounder && selectedTask.assigned_to !== user?.id}
+                              >
+                                <SelectTrigger className="w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="not_started">Not Started</SelectItem>
+                                  <SelectItem value="ongoing">Ongoing</SelectItem>
+                                  <SelectItem value="completed">Completed</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Assignee</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {selectedTask.profiles?.display_name || selectedTask.profiles?.email || "Unassigned"}
+                              </p>
+                            </div>
+                          </div>
+                          <Separator />
+                          <div>
+                            <h4 className="text-sm font-medium mb-3">Comments</h4>
+                            <ScrollArea className="h-48 pr-4">
+                              <div className="space-y-3">
+                                {taskComments.map((comment) => (
+                                  <div key={comment.id} className="flex gap-3">
+                                    <Avatar className="h-8 w-8">
+                                      <AvatarImage src={comment.profiles?.avatar_url || undefined} />
+                                      <AvatarFallback className="text-xs">
+                                        {comment.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">{comment.profiles?.display_name}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-muted-foreground mt-1">{comment.content}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                                {taskComments.length === 0 && (
+                                  <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>
+                                )}
+                              </div>
+                            </ScrollArea>
+                            <div className="flex gap-2 mt-4">
+                              <Input
+                                value={newComment}
+                                onChange={(e) => setNewComment(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAddComment()}
+                                placeholder="Add a comment..."
+                              />
+                              <Button onClick={handleAddComment} disabled={submitting || !newComment.trim()}>
+                                <Send className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </>
-                  )}
-                </DialogContent>
-              </Dialog>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
-              <Hexagon className="w-16 h-16 text-muted-foreground/50 mb-4" />
-              <h2 className="text-xl font-medium mb-2">No Pod Selected</h2>
-              <p className="text-muted-foreground mb-4">Create or select a pod to get started</p>
-              <Button onClick={() => setCreatePodOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Your First Pod
-              </Button>
-                </div>
-              )}
-            </main>
-          </div>
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)]">
+                <Hexagon className="w-16 h-16 text-muted-foreground/50 mb-4" />
+                <h2 className="text-xl font-medium mb-2">No Pod Selected</h2>
+                <p className="text-muted-foreground mb-4">Create or select a pod to get started</p>
+                <Button onClick={() => setCreatePodOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Pod
+                </Button>
+              </div>
+            )}
+          </main>
         </div>
-        <FilePreview open={previewOpen} onOpenChange={setPreviewOpen} file={previewFile} />
-      </ErrorBoundary>
-    )
-  }
+      </div>
+      <FilePreview open={previewOpen} onOpenChange={setPreviewOpen} file={previewFile} />
+    </ErrorBoundary>
+  )
+}
