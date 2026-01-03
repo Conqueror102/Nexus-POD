@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UserAvatarUpload } from "@/components/user-avatar-upload"
+import { DeleteAccountDialog } from "@/components/delete-account-dialog"
 import { 
   ArrowLeft, Loader2, User, Bell, Shield, Hexagon, 
   Mail, Smartphone, Globe, Check, AlertCircle
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const [displayName, setDisplayName] = useState("")
   const [notificationEmail, setNotificationEmail] = useState(true)
@@ -399,14 +401,23 @@ export default function SettingsPage() {
                     <p className="font-medium">Delete Account</p>
                     <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
                   </div>
-                  <Button variant="destructive" size="sm" disabled>
-                    Coming Soon
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    Delete Account
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
+
+        <DeleteAccountDialog 
+          isOpen={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+        />
       </main>
     </div>
   )
