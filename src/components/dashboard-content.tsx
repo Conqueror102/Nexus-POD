@@ -102,6 +102,25 @@ export function DashboardContent() {
   const fetchPodData = useCallback(async () => {
     if (!selectedPod) return
 
+    // If offline, load from IndexedDB
+    if (!isOnline) {
+      try {
+        const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
+        const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
+        const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
+        
+        setProjects(offlineProjects)
+        setTasks(offlineTasks)
+        setChatMessages(offlineMessages)
+        setMembers([])
+        setActivityLogs([])
+        setPodFiles([])
+        return
+      } catch (error) {
+        console.error('Error loading offline data:', error)
+      }
+    }
+
     const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
       fetch(`/api/projects?pod_id=${selectedPod.id}`),
       fetch(`/api/tasks?pod_id=${selectedPod.id}`),
