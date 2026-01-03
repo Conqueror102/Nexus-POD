@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { UserAvatarUpload } from "@/components/user-avatar-upload"
 import { 
   ArrowLeft, Loader2, User, Bell, Shield, Hexagon, 
   Mail, Smartphone, Globe, Check, AlertCircle
@@ -177,18 +178,11 @@ export default function SettingsPage() {
                 <CardDescription>Update your personal information and preferences</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-center gap-6">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src={profile?.avatar_url || undefined} />
-                    <AvatarFallback className="text-2xl">
-                      {displayName?.substring(0, 2).toUpperCase() || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Profile Picture</p>
-                    <p className="text-xs text-muted-foreground mt-1">Avatar customization coming soon</p>
-                  </div>
-                </div>
+                <UserAvatarUpload 
+                  currentAvatar={profile?.avatar_url || null}
+                  displayName={displayName}
+                  onAvatarChange={(url) => setProfile(prev => prev ? { ...prev, avatar_url: url } : null)}
+                />
 
                 <Separator />
 
