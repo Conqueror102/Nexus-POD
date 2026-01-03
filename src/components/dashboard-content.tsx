@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/auth-provider"
+import { db } from "@/lib/offline-db"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -174,16 +175,72 @@ export function DashboardContent() {
   }, [selectedPod, user, supabase, fetchPodData])
 
   async function handleCreatePod(title: string, summary: string) {
-    const res = await fetch("/api/pods", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, summary }),
-    })
-    if (res.ok) {
-      const pod = await res.json()
-      setPods(prev => [{ ...pod, role: 'founder' }, ...prev])
-      setSelectedPod({ ...pod, role: 'founder' })
-      toast.success("Pod created successfully!")
+    try {
+      // Check if online
+      if (!navigator.onLine) {
+        // Save offline pod to IndexedDB
+        const offlinePod = {
+          id: `local_${Date.now()}`,
+          npn: `NP-${Math.floor(Math.random() * 100000)}`,
+          title,
+          summary: summary || null,
+          avatar_url: null,
+          founder_id: user?.id || '',
+          storage_used_bytes: 0,
+          role: 'founder' as const,
+          synced_at: 0,
+        }
+        await db.pods.add(offlinePod)
+        
+        // Add to pending sync
+        await db.pendingSync.add({
+          type: 'task_create',
+          entity_id: offlinePod.id,
+          data: { title, summary, type: 'pod' },
+          created_at: Date.now(),
+          retries: 0,
+        })
+        
+        setPods(prev => [offlinePod, ...prev])
+        setSelectedPod(offlinePod)
+        toast.success("Pod saved offline. It will sync when you're back online.")
+        return
+      }
+
+      const res = await fetch("/api/pods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, summary }),
+      })
+      if (res.ok) {
+        const pod = await res.json()
+        // Save to offline DB as synced
+        await db.pods.put({ ...pod, role: 'founder', synced_at: Date.now() })
+        setPods(prev => [{ ...pod, role: 'founder' }, ...prev])
+        setSelectedPod({ ...pod, role: 'founder' })
+        toast.success("Pod created successfully!")
+      }
+    } catch (error) {
+      console.error('Pod creation error:', error)
+      // If network error, save offline
+      if (!navigator.onLine) {
+        const offlinePod = {
+          id: `local_${Date.now()}`,
+          npn: `NP-${Math.floor(Math.random() * 100000)}`,
+          title,
+          summary: summary || null,
+          avatar_url: null,
+          founder_id: user?.id || '',
+          storage_used_bytes: 0,
+          role: 'founder' as const,
+          synced_at: 0,
+        }
+        await db.pods.add(offlinePod)
+        setPods(prev => [offlinePod, ...prev])
+        toast.success("Pod saved offline. It will sync when you're back online.")
+      } else {
+        toast.error("Failed to create pod")
+      }
     }
   }
 
