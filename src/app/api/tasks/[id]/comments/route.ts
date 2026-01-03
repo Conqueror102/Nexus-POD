@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { sendEmail, commentAddedEmail } from '@/lib/email'
 
 export async function POST(
   request: Request,
@@ -21,6 +22,9 @@ export async function POST(
   const { data: task } = await supabase
     .from('tasks')
     .select(`
+      name,
+      assigned_to,
+      created_by,
       projects (
         pod_id
       )
@@ -64,6 +68,45 @@ export async function POST(
 
   if (error) {
     return NextResponse.json({ error: 'Failed to create comment' }, { status: 500 })
+  }
+
+  const { data: commenter } = await supabase
+    .from('profiles')
+    .select('display_name, email')
+    .eq('id', user.id)
+    .single()
+
+  const usersToNotify = new Set<string>()
+  if (task.assigned_to && task.assigned_to !== user.id) usersToNotify.add(task.assigned_to)
+  if (task.created_by && task.created_by !== user.id) usersToNotify.add(task.created_by)
+
+  for (const userId of usersToNotify) {
+    const { data: recipient } = await supabase
+      .from('profiles')
+      .select('email, notification_email')
+      .eq('id', userId)
+      .single()
+
+    if (recipient?.notification_email && recipient.email) {
+      const emailContent = commentAddedEmail(
+        task.name,
+        commenter?.display_name || commenter?.email || 'Someone',
+        content.trim()
+      )
+      await sendEmail({
+        to: recipient.email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+      })
+    }
+
+    await supabase.from('notifications').insert({
+      user_id: userId,
+      type: 'task_comment',
+      title: 'New Comment',
+      message: `${commenter?.display_name || 'Someone'} commented on: ${task.name}`,
+      link: `/dashboard`,
+    })
   }
 
   return NextResponse.json(comment)

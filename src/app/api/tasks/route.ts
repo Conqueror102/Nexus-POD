@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { sendEmail, taskAssignedEmail } from '@/lib/email'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
 
   const { data: project } = await supabase
     .from('projects')
-    .select('pod_id')
+    .select('pod_id, name')
     .eq('id', project_id)
     .single()
 
@@ -64,6 +65,37 @@ export async function POST(request: Request) {
         hours_before: hours,
       })
     }
+  }
+
+  if (assigned_to && assigned_to !== user.id) {
+    const { data: assignee } = await supabase
+      .from('profiles')
+      .select('email, notification_email')
+      .eq('id', assigned_to)
+      .single()
+    
+    const { data: assigner } = await supabase
+      .from('profiles')
+      .select('display_name, email')
+      .eq('id', user.id)
+      .single()
+
+    if (assignee?.notification_email && assignee.email) {
+      const emailContent = taskAssignedEmail(name, project.name, assigner?.display_name || assigner?.email || 'Someone')
+      await sendEmail({
+        to: assignee.email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+      })
+    }
+
+    await supabase.from('notifications').insert({
+      user_id: assigned_to,
+      type: 'task_assigned',
+      title: 'Task Assigned',
+      message: `${assigner?.display_name || 'Someone'} assigned you: ${name}`,
+      link: `/dashboard`,
+    })
   }
 
   return NextResponse.json(task)
