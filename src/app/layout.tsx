@@ -18,6 +18,13 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Nexus Pod - Workspace for African Founders",
   description: "A lightweight, offline-first workspace for African founders, creators, devs, and small teams. Budget-friendly in Naira.",
+  manifest: "/manifest.json",
+  themeColor: "#f97316",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Nexus Pod",
+  },
 };
 
 export default function RootLayout({

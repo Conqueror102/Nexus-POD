@@ -24,10 +24,13 @@ import {
   Hexagon, Plus, FolderKanban, Users, MessageSquare, LogOut, 
   ChevronRight, Calendar, CheckCircle2, Circle, Clock, Loader2, Copy, Check,
   Send, MoreVertical, Trash2, UserMinus, Link as LinkIcon, TrendingUp,
-  AlertTriangle, Target, BarChart3, Activity, Search, Bell, Settings, User, X
+  AlertTriangle, Target, BarChart3, Activity, Search, Bell, Settings, User, X,
+  Download, Filter, ArrowUpCircle, ArrowRightCircle, ArrowDownCircle
 } from "lucide-react"
 import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns"
-import type { PodWithRole, Project, Task, Profile, Notification } from "@/lib/types"
+import type { PodWithRole, Project, Task, Profile, Notification, ActivityLog } from "@/lib/types"
+import { SplashScreen } from "@/components/splash-screen"
+import { ErrorBoundary } from "@/components/error-boundary"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -112,9 +115,14 @@ export function DashboardContent() {
   const [newTaskDescription, setNewTaskDescription] = useState("")
   const [newTaskDueDate, setNewTaskDueDate] = useState("")
   const [newTaskAssignee, setNewTaskAssignee] = useState("")
+  const [newTaskPriority, setNewTaskPriority] = useState<"low" | "medium" | "high">("medium")
   const [selectedProjectId, setSelectedProjectId] = useState("")
   const [newComment, setNewComment] = useState("")
   const [chatMessage, setChatMessage] = useState("")
+  const [filterPriority, setFilterPriority] = useState<string>("all")
+  const [filterStatus, setFilterStatus] = useState<string>("all")
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([])
+  const [showSplash, setShowSplash] = useState(true)
 
   const [profileDisplayName, setProfileDisplayName] = useState("")
   const [savingProfile, setSavingProfile] = useState(false)
@@ -171,17 +179,19 @@ export function DashboardContent() {
   async function fetchPodData() {
     if (!selectedPod) return
 
-    const [projectsRes, tasksRes, membersRes, chatRes] = await Promise.all([
+    const [projectsRes, tasksRes, membersRes, chatRes, activityRes] = await Promise.all([
       fetch(`/api/projects?pod_id=${selectedPod.id}`),
       fetch(`/api/tasks?pod_id=${selectedPod.id}`),
       fetch(`/api/pods/${selectedPod.id}/members`),
       fetch(`/api/chat?pod_id=${selectedPod.id}`),
+      fetch(`/api/activity?pod_id=${selectedPod.id}`),
     ])
 
     if (projectsRes.ok) setProjects(await projectsRes.json())
     if (tasksRes.ok) setTasks(await tasksRes.json())
     if (membersRes.ok) setMembers(await membersRes.json())
     if (chatRes.ok) setChatMessages(await chatRes.json())
+    if (activityRes.ok) setActivityLogs(await activityRes.json())
   }
 
   useEffect(() => {
@@ -285,6 +295,7 @@ export function DashboardContent() {
         description: newTaskDescription,
         due_date: new Date(newTaskDueDate).toISOString(),
         assigned_to: newTaskAssignee || null,
+        priority: newTaskPriority,
       }),
     })
 
@@ -295,6 +306,7 @@ export function DashboardContent() {
       setNewTaskDescription("")
       setNewTaskDueDate("")
       setNewTaskAssignee("")
+      setNewTaskPriority("medium")
       setSelectedProjectId("")
       toast.success("Task created successfully!")
     }
@@ -443,6 +455,18 @@ export function DashboardContent() {
     completed: "Completed",
   }
 
+  const priorityColors = {
+    low: "text-blue-500",
+    medium: "text-amber-500",
+    high: "text-red-500",
+  }
+
+  const priorityIcons = {
+    low: ArrowDownCircle,
+    medium: ArrowRightCircle,
+    high: ArrowUpCircle,
+  }
+
   const isFounder = selectedPod?.role === "founder"
   const myTasks = tasks.filter(t => t.assigned_to === user?.id)
   const completedTasks = tasks.filter(t => t.status === "completed")
@@ -453,12 +477,14 @@ export function DashboardContent() {
     .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
   const completionRate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0
 
-  const filteredTasks = searchQuery 
-    ? tasks.filter(t => 
-        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.description.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : tasks
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch = !searchQuery || 
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.description.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesPriority = filterPriority === "all" || t.priority === filterPriority
+    const matchesStatus = filterStatus === "all" || t.status === filterStatus
+    return matchesSearch && matchesPriority && matchesStatus
+  })
 
   const filteredProjects = searchQuery
     ? projects.filter(p => 
@@ -466,6 +492,36 @@ export function DashboardContent() {
         (p.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
       )
     : projects
+
+  async function handleExport(format: "json" | "csv") {
+    if (!selectedPod) return
+    const res = await fetch(`/api/export?pod_id=${selectedPod.id}&format=${format}`)
+    if (res.ok) {
+      if (format === "csv") {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${selectedPod.title}-tasks.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      } else {
+        const data = await res.json()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${selectedPod.title}-export.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast.success(`Exported as ${format.toUpperCase()}`)
+    }
+  }
+
+  if (showSplash) {
+    return <SplashScreen onComplete={() => setShowSplash(false)} />
+  }
 
   if (loading) {
     return (
@@ -476,6 +532,7 @@ export function DashboardContent() {
   }
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-background">
       <div className="flex">
         <aside className="w-72 min-h-screen border-r bg-card/50 backdrop-blur-sm flex flex-col">
@@ -723,15 +780,52 @@ export function DashboardContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search tasks, projects..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 w-64"
-                    />
-                  </div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search tasks, projects..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 w-48"
+                      />
+                    </div>
+
+                    <Select value={filterPriority} onValueChange={setFilterPriority}>
+                      <SelectTrigger className="w-28">
+                        <Filter className="w-3 h-3 mr-1" />
+                        <SelectValue placeholder="Priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Priority</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={filterStatus} onValueChange={setFilterStatus}>
+                      <SelectTrigger className="w-28">
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="not_started">Not Started</SelectItem>
+                        <SelectItem value="ongoing">Ongoing</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon">
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleExport("json")}>Export as JSON</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport("csv")}>Export as CSV</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
 
                   {isFounder && (
                     <>
@@ -925,65 +1019,74 @@ export function DashboardContent() {
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium truncate">{task.name}</p>
                                     <div className="flex items-center gap-2 mt-1">
-                                      <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
-                                        <Calendar className="w-3 h-3 inline mr-1" />
-                                        {format(new Date(task.due_date), "MMM d, yyyy")}
-                                      </span>
+                                        <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
+                                          <Calendar className="w-3 h-3 inline mr-1" />
+                                          {format(new Date(task.due_date), "MMM d, yyyy")}
+                                        </span>
+                                        {task.priority && (
+                                          <span className={`text-xs ${priorityColors[task.priority]}`}>
+                                            {(() => { const Icon = priorityIcons[task.priority]; return <Icon className="w-3 h-3 inline" />; })()}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                  <Badge className={statusColors[task.status]} variant="secondary">
-                                    {statusLabels[task.status]}
-                                  </Badge>
-                                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-8 text-center">
-                              <CheckCircle2 className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                              <p className="text-sm text-muted-foreground">No tasks assigned to you</p>
-                            </div>
-                          )}
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-amber-500" />
-                          Upcoming Deadlines
-                        </CardTitle>
-                        <CardDescription>Tasks due soon ({upcomingTasks.length})</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ScrollArea className="h-72">
-                          {upcomingTasks.length > 0 ? (
-                            <div className="space-y-2">
-                              {upcomingTasks.slice(0, 10).map((task) => {
-                                const daysUntil = differenceInDays(new Date(task.due_date), new Date())
-                                return (
-                                  <button
-                                    key={task.id}
-                                    onClick={() => openTaskDetail(task)}
-                                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
-                                  >
-                                    <div className={`w-2 h-2 rounded-full ${statusColors[task.status]}`} />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium truncate">{task.name}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{task.projects?.name}</p>
-                                    </div>
-                                    <Badge variant={daysUntil <= 1 ? "destructive" : daysUntil <= 3 ? "secondary" : "outline"}>
-                                      {daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `${daysUntil} days`}
+                                    <Badge className={statusColors[task.status]} variant="secondary">
+                                      {statusLabels[task.status]}
                                     </Badge>
+                                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
                                   </button>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-8 text-center">
-                              <Calendar className="w-12 h-12 text-muted-foreground/50 mb-3" />
-                              <p className="text-sm text-muted-foreground">No upcoming deadlines</p>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center justify-center py-8 text-center">
+                                <CheckCircle2 className="w-12 h-12 text-muted-foreground/50 mb-3" />
+                                <p className="text-sm text-muted-foreground">No tasks assigned to you</p>
+                              </div>
+                            )}
+                          </ScrollArea>
+                        </CardContent>
+                      </Card>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-amber-500" />
+                            Upcoming Deadlines
+                          </CardTitle>
+                          <CardDescription>Tasks due soon ({upcomingTasks.length})</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <ScrollArea className="h-72">
+                            {upcomingTasks.length > 0 ? (
+                              <div className="space-y-2">
+                                {upcomingTasks.slice(0, 10).map((task) => {
+                                  const daysUntil = differenceInDays(new Date(task.due_date), new Date())
+                                  const PriorityIcon = priorityIcons[task.priority || "medium"]
+                                  return (
+                                    <button
+                                      key={task.id}
+                                      onClick={() => openTaskDetail(task)}
+                                      className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
+                                    >
+                                      <div className={`w-2 h-2 rounded-full ${statusColors[task.status]}`} />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm font-medium truncate">{task.name}</p>
+                                          <PriorityIcon className={`w-3 h-3 flex-shrink-0 ${priorityColors[task.priority || "medium"]}`} />
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">{task.projects?.name}</p>
+                                      </div>
+                                      <Badge variant={daysUntil <= 1 ? "destructive" : daysUntil <= 3 ? "secondary" : "outline"}>
+                                        {daysUntil === 0 ? "Today" : daysUntil === 1 ? "Tomorrow" : `${daysUntil} days`}
+                                      </Badge>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center justify-center py-8 text-center">
+                                <Calendar className="w-12 h-12 text-muted-foreground/50 mb-3" />
+                                <p className="text-sm text-muted-foreground">No upcoming deadlines</p>
                             </div>
                           )}
                         </ScrollArea>
@@ -1031,33 +1134,55 @@ export function DashboardContent() {
                         Recent Activity
                       </CardTitle>
                       <CardDescription>Latest updates in this pod</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ScrollArea className="h-64">
-                        <div className="space-y-4">
-                          {tasks.slice(0, 8).map((task) => (
-                            <div key={task.id} className="flex items-start gap-3">
-                              <div className={`w-2 h-2 rounded-full mt-2 ${statusColors[task.status]}`} />
-                              <div className="flex-1">
-                                <p className="text-sm">
-                                  <span className="font-medium">{task.name}</span>
-                                  {" "}in{" "}
-                                  <span className="text-primary">{task.projects?.name}</span>
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
-                                </p>
+                      </CardHeader>
+                      <CardContent>
+                        <ScrollArea className="h-64">
+                          <div className="space-y-4">
+                            {activityLogs.length > 0 ? activityLogs.slice(0, 12).map((activity) => (
+                              <div key={activity.id} className="flex items-start gap-3">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarImage src={activity.profiles?.avatar_url || undefined} />
+                                  <AvatarFallback className="text-xs">
+                                    {activity.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1">
+                                  <p className="text-sm">
+                                    <span className="font-medium">{activity.profiles?.display_name || "User"}</span>
+                                    {" "}{activity.action}{" "}
+                                    {activity.entity_name && <span className="text-primary">{activity.entity_name}</span>}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })}
+                                  </p>
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {activity.entity_type}
+                                </Badge>
                               </div>
-                              <Badge variant="outline" className="text-xs">
-                                {statusLabels[task.status]}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+                            )) : tasks.slice(0, 8).map((task) => (
+                              <div key={task.id} className="flex items-start gap-3">
+                                <div className={`w-2 h-2 rounded-full mt-2 ${statusColors[task.status]}`} />
+                                <div className="flex-1">
+                                  <p className="text-sm">
+                                    <span className="font-medium">{task.name}</span>
+                                    {" "}in{" "}
+                                    <span className="text-primary">{task.projects?.name}</span>
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatDistanceToNow(new Date(task.updated_at), { addSuffix: true })}
+                                  </p>
+                                </div>
+                                <Badge variant="outline" className="text-xs">
+                                  {statusLabels[task.status]}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
                 <TabsContent value="projects" className="space-y-6">
                   {isFounder && (
@@ -1145,15 +1270,43 @@ export function DashboardContent() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label>Due Date</Label>
-                              <Input
-                                type="datetime-local"
-                                value={newTaskDueDate}
-                                onChange={(e) => setNewTaskDueDate(e.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Assign To</Label>
+                                <Label>Due Date</Label>
+                                <Input
+                                  type="datetime-local"
+                                  value={newTaskDueDate}
+                                  onChange={(e) => setNewTaskDueDate(e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Priority</Label>
+                                <Select value={newTaskPriority} onValueChange={(v) => setNewTaskPriority(v as "low" | "medium" | "high")}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select priority" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="low">
+                                      <div className="flex items-center gap-2">
+                                        <ArrowDownCircle className="w-4 h-4 text-blue-500" />
+                                        Low
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="medium">
+                                      <div className="flex items-center gap-2">
+                                        <ArrowRightCircle className="w-4 h-4 text-amber-500" />
+                                        Medium
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="high">
+                                      <div className="flex items-center gap-2">
+                                        <ArrowUpCircle className="w-4 h-4 text-red-500" />
+                                        High
+                                      </div>
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Assign To</Label>
                               <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select member" />
@@ -1476,10 +1629,11 @@ export function DashboardContent() {
                 <Plus className="w-4 h-4 mr-2" />
                 Create Your First Pod
               </Button>
-            </div>
-          )}
-        </main>
+              </div>
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   )
 }

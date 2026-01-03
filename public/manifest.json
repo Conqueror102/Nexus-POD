@@ -1,0 +1,28 @@
+{
+  "name": "Nexus Pod",
+  "short_name": "NexusPod",
+  "description": "A lightweight, offline-first workspace for African founders, creators, devs, and small teams.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f97316",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "business"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false
+}

@@ -2,20 +2,18 @@
 
 import { useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Hexagon } from "lucide-react"
+import { Loader2, Hexagon, ArrowLeft, CheckCircle2 } from "lucide-react"
 
-export default function LoginPage() {
+export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
   const supabase = createClient()
 
   async function handleSubmit(e: React.FormEvent) {
@@ -23,9 +21,8 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
     })
 
     if (error) {
@@ -34,8 +31,36 @@ export default function LoginPage() {
       return
     }
 
-    router.push("/dashboard")
-    router.refresh()
+    setSent(true)
+    setLoading(false)
+  }
+
+  if (sent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+              </div>
+            </div>
+            <CardTitle>Check your email</CardTitle>
+            <CardDescription>
+              We sent a password reset link to <strong>{email}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex flex-col gap-4">
+            <Link href="/login" className="w-full">
+              <Button variant="outline" className="w-full">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Sign In
+              </Button>
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -53,8 +78,8 @@ export default function LoginPage() {
             </div>
           </div>
           <div>
-            <CardTitle className="text-2xl font-semibold tracking-tight">Welcome back</CardTitle>
-            <CardDescription>Sign in to your Nexus Pod account</CardDescription>
+            <CardTitle className="text-2xl font-semibold tracking-tight">Forgot password?</CardTitle>
+            <CardDescription>Enter your email and we&apos;ll send you a reset link</CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -66,53 +91,17 @@ export default function LoginPage() {
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">
-                    Forgot password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button 
-              type="submit" 
-              className="w-full h-11"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign In"
-              )}
+            <Button type="submit" className="w-full h-11" disabled={loading}>
+              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending...</> : "Send Reset Link"}
             </Button>
-            <p className="text-sm text-muted-foreground text-center">
-              Don&apos;t have an account?{" "}
-              <Link href="/signup" className="text-primary hover:underline font-medium">
-                Sign up
-              </Link>
-            </p>
+            <Link href="/login" className="text-sm text-muted-foreground hover:text-primary">
+              <ArrowLeft className="w-3 h-3 inline mr-1" />
+              Back to Sign In
+            </Link>
           </CardFooter>
         </form>
       </Card>
