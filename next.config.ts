@@ -24,13 +24,17 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  turbopack: {
-    rules: {
-      "*.{jsx,tsx}": {
-        loaders: [loaderPath]
-      }
-    }
-  }
+  webpack: (config) => {
+    config.module.rules.push({
+      test: /\.(jsx|tsx)$/,
+      use: [
+        {
+          loader: loaderPath,
+        },
+      ],
+    });
+    return config;
+  },
 } as NextConfig;
 
 export default nextConfig;
