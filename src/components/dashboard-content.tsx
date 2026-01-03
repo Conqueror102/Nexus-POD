@@ -32,6 +32,7 @@ import {
   OverviewTab, ProjectsTab, MembersTab, FilesTab, ChatTab, DashboardSidebar, MobileMenuButton,
   TaskWithAssignee, PodMemberWithProfile, ChatMessageWithProfile, TaskCommentWithProfile, statusColors,
 } from "@/components/dashboard"
+import { DeletePodDialog } from "@/components/delete-pod-dialog"
 
 export function DashboardContent() {
   const { user, signOut } = useAuth()
@@ -69,6 +70,7 @@ export function DashboardContent() {
   const [inviteLink, setInviteLink] = useState("")
   const [inviteCopied, setInviteCopied] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [deletePodDialogOpen, setDeletePodDialogOpen] = useState(false)
 
   const fetchPods = useCallback(async () => {
     // If offline, load from IndexedDB
@@ -503,11 +505,14 @@ export function DashboardContent() {
   }
 
   async function handleDeletePod() {
-    if (!selectedPod) return
-    await fetch(`/api/pods/${selectedPod.id}`, { method: "DELETE" })
-    setPods(prev => prev.filter(p => p.id !== selectedPod.id))
-    setSelectedPod(pods.find(p => p.id !== selectedPod.id) || null)
-    toast.success("Pod deleted")
+    setDeletePodDialogOpen(true)
+  }
+
+  function handleDeletePodSuccess() {
+    if (selectedPod) {
+      setPods(prev => prev.filter(p => p.id !== selectedPod.id))
+      setSelectedPod(pods.find(p => p.id !== selectedPod.id) || null)
+    }
   }
 
   async function handleMarkAllNotificationsRead() {
@@ -787,6 +792,12 @@ export function DashboardContent() {
         </main>
       </div>
       <FilePreview open={previewOpen} onOpenChange={setPreviewOpen} file={previewFile} />
+      <DeletePodDialog 
+        isOpen={deletePodDialogOpen}
+        onOpenChange={setDeletePodDialogOpen}
+        pod={selectedPod}
+        onDeleteSuccess={handleDeletePodSuccess}
+      />
     </ErrorBoundary>
   )
 }
