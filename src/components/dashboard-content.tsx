@@ -433,7 +433,7 @@ export function DashboardContent() {
                     {isFounder && (
                       <>
                         <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-                          <DialogTrigger asChild><Button variant="outline" className="hidden sm:flex"><Users className="w-4 h-4 mr-2" />Invite</Button></DialogTrigger>
+                          <DialogTrigger asChild><Button variant="outline" className="flex"><Users className="w-4 h-4 mr-2" />Invite</Button></DialogTrigger>
                           <DialogContent>
                             <DialogHeader><DialogTitle>Invite Team Members</DialogTitle><DialogDescription>Share this link to invite people</DialogDescription></DialogHeader>
                             <div className="space-y-4 py-4">
