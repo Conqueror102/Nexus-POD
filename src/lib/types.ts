@@ -59,9 +59,23 @@ export interface Task {
   due_date: string
   assigned_to: string | null
   status: 'not_started' | 'ongoing' | 'completed'
+  priority: 'low' | 'medium' | 'high'
   created_by: string
   created_at: string
   updated_at: string
+}
+
+export interface ActivityLog {
+  id: string
+  pod_id: string
+  user_id: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  entity_name: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  profiles?: Profile
 }
 
 export interface TaskComment {

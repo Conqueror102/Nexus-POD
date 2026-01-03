@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { project_id, name, description, due_date, assigned_to } = await request.json()
+  const { project_id, name, description, due_date, assigned_to, priority } = await request.json()
   if (!project_id || !name || !description || !due_date) {
     return NextResponse.json({ error: 'Project ID, name, description and due date are required' }, { status: 400 })
   }
@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       description,
       due_date,
       assigned_to,
+      priority: priority || 'medium',
       created_by: user.id,
     })
     .select()
