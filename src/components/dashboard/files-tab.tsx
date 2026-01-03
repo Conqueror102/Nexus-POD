@@ -10,8 +10,7 @@ import {
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { toast } from "sonner"
-import type { PodFileWithProfile } from "./types"
-import type { PodWithRole, Profile } from "@/lib/types"
+import type { PodWithRole, Profile, PodFileWithProfile } from "@/lib/types"
 
 interface FilesTabProps {
   selectedPod: PodWithRole
