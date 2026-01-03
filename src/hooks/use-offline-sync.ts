@@ -5,13 +5,19 @@ import { db, setLastSyncTime, type PendingSync } from '@/lib/offline-db'
 import { toast } from 'sonner'
 
 export function useOfflineSync() {
-  const [isOnline, setIsOnline] = useState(true)
+  // Initialize as null to indicate "unknown" state during SSR/hydration
+  const [isOnline, setIsOnline] = useState<boolean | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
-    setIsOnline(navigator.onLine)
+    // Only set initial state once to avoid flash
+    if (!hasInitialized.current) {
+      hasInitialized.current = true
+      setIsOnline(navigator.onLine)
+    }
 
     function handleOnline() {
       setIsOnline(true)
@@ -278,7 +284,8 @@ export function useOfflineSync() {
   }, [])
 
   return {
-    isOnline,
+    // Treat null (unknown/loading) as online to avoid flash of offline UI
+    isOnline: isOnline !== false,
     isSyncing,
     pendingCount,
     syncPendingChanges,
