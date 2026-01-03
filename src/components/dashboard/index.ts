@@ -1,0 +1,6 @@
+export { OverviewTab } from "./overview-tab"
+export { ProjectsTab } from "./projects-tab"
+export { MembersTab } from "./members-tab"
+export { FilesTab } from "./files-tab"
+export { ChatTab } from "./chat-tab"
+export * from "./types"
