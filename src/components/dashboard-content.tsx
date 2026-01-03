@@ -71,10 +71,27 @@ export function DashboardContent() {
   const [submitting, setSubmitting] = useState(false)
 
   const fetchPods = useCallback(async () => {
+    // If offline, load from IndexedDB
+    if (!isOnline) {
+      try {
+        const offlinePods = await db.pods.toArray()
+        setPods(offlinePods)
+        if (offlinePods.length > 0 && !selectedPod) {
+          setSelectedPod(offlinePods[0])
+        }
+        setLoading(false)
+        return
+      } catch (error) {
+        console.error('Error loading offline pods:', error)
+      }
+    }
+
     const res = await fetch("/api/pods")
     if (res.ok) {
       const data = await res.json()
       setPods(data)
+      // Save to offline DB
+      data.forEach(pod => db.pods.put({ ...pod, synced_at: Date.now() }))
       if (data.length > 0 && !selectedPod) {
         setSelectedPod(data[0])
       }
