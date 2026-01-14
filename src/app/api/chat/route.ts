@@ -9,29 +9,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { pod_id, content } = await request.json()
-  if (!pod_id || !content || !content.trim()) {
-    return NextResponse.json({ error: 'Pod ID and message content are required' }, { status: 400 })
-  }
+    const { pod_id, content, updated_at: incoming_updated_at } = await request.json()
+    if (!pod_id || !content || !content.trim()) {
+      return NextResponse.json({ error: 'Pod ID and message content are required' }, { status: 400 })
+    }
 
-  const { data: membership } = await supabase
-    .from('pod_members')
-    .select('role')
-    .eq('pod_id', pod_id)
-    .eq('user_id', user.id)
-    .single()
+    const { data: membership } = await supabase
+      .from('pod_members')
+      .select('role')
+      .eq('pod_id', pod_id)
+      .eq('user_id', user.id)
+      .single()
 
-  if (!membership) {
-    return NextResponse.json({ error: 'Not a member of this pod' }, { status: 403 })
-  }
+    if (!membership) {
+      return NextResponse.json({ error: 'Not a member of this pod' }, { status: 403 })
+    }
 
-  const { data: message, error } = await supabase
-    .from('chat_messages')
-    .insert({
-      pod_id,
-      user_id: user.id,
-      content: content.trim(),
-    })
+    const { data: message, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        pod_id,
+        user_id: user.id,
+        content: content.trim(),
+        updated_at: incoming_updated_at ? new Date(incoming_updated_at).toISOString() : new Date().toISOString()
+      })
+
     .select(`
       *,
       profiles:user_id (

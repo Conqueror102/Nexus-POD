@@ -573,16 +573,73 @@ export function DashboardContent() {
                 </div>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                  <TabsList className="w-full md:w-auto overflow-x-auto">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="projects">Projects</TabsTrigger>
-                    <TabsTrigger value="members">Team</TabsTrigger>
-                    <TabsTrigger value="files">Files</TabsTrigger>
-                    <TabsTrigger value="chat">Chat</TabsTrigger>
-                  </TabsList>
+                    <TabsList className="w-full md:w-auto overflow-x-auto">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="deadlines">Deadlines</TabsTrigger>
+                      <TabsTrigger value="projects">Projects</TabsTrigger>
+                      <TabsTrigger value="members">Team</TabsTrigger>
+                      <TabsTrigger value="files">Files</TabsTrigger>
+                      <TabsTrigger value="chat">Chat</TabsTrigger>
+                    </TabsList>
 
-                  <TabsContent value="overview"><OverviewTab tasks={tasks} activityLogs={activityLogs} user={user} onTaskClick={openTaskDetail} /></TabsContent>
-                  <TabsContent value="projects">
+                    <TabsContent value="overview"><OverviewTab tasks={tasks} activityLogs={activityLogs} user={user} onTaskClick={openTaskDetail} /></TabsContent>
+                    <TabsContent value="deadlines">
+                      <div className="space-y-6">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-amber-500" />
+                              All Upcoming Deadlines
+                            </CardTitle>
+                            <CardDescription>Comprehensive list of all tasks sorted by due date</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-4">
+                              {tasks
+                                .filter(t => t.status !== "completed")
+                                .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+                                .map((task) => {
+                                  const isOverdue = isPast(new Date(task.due_date))
+                                  return (
+                                    <div 
+                                      key={task.id} 
+                                      className={`flex items-center gap-4 p-4 rounded-xl border ${isOverdue ? "border-destructive/20 bg-destructive/5" : "bg-muted/30"} hover:bg-muted/50 transition-colors cursor-pointer`}
+                                      onClick={() => openTaskDetail(task)}
+                                    >
+                                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${statusColors[task.status]}`} />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <h4 className="font-semibold text-sm sm:text-base truncate">{task.name}</h4>
+                                          <Badge variant={task.priority === 'high' ? 'destructive' : task.priority === 'medium' ? 'secondary' : 'outline'} className="text-[10px] h-4">
+                                            {task.priority.toUpperCase()}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">{task.projects?.name}</p>
+                                      </div>
+                                      <div className="text-right flex-shrink-0">
+                                        <p className={`text-xs font-bold ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}>
+                                          {format(new Date(task.due_date), "MMM d")}
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {format(new Date(task.due_date), "HH:mm")}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              {tasks.filter(t => t.status !== "completed").length === 0 && (
+                                <div className="text-center py-12 text-muted-foreground">
+                                  <CheckCircle2 className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                                  <p>No upcoming deadlines. All caught up!</p>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="projects">
+
                     <ProjectsTab 
                       projects={projects} 
                       tasks={filteredTasksToDisplay} 

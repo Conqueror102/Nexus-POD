@@ -10,9 +10,11 @@ export async function GET(request: Request) {
 
   const supabase = await createClient()
   
-  const now = new Date()
-  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000)
-  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000)
+    const now = new Date()
+    // Widen window to 15 minutes to be more resilient to cron timing
+    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000)
+    const fifteenMinutesFromNow = new Date(now.getTime() + 15 * 60 * 1000)
+
 
     const { data: reminders, error } = await supabase
       .from('task_reminders')

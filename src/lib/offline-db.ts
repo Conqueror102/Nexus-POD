@@ -10,6 +10,7 @@ export interface OfflinePod {
   storage_used_bytes: number
   role: 'founder' | 'member'
   synced_at: number
+  updated_at: number
 }
 
 export interface OfflineProject {
@@ -19,6 +20,7 @@ export interface OfflineProject {
   description: string | null
   created_by: string
   synced_at: number
+  updated_at: number
 }
 
 export interface OfflineTask {
@@ -32,6 +34,7 @@ export interface OfflineTask {
   priority: 'low' | 'medium' | 'high'
   created_by: string
   synced_at: number
+  updated_at: number
   is_dirty?: boolean
   local_id?: string
   labels: string[]
@@ -44,6 +47,7 @@ export interface OfflineTaskComment {
   content: string
   created_at: string
   synced_at: number
+  updated_at: number
   is_dirty?: boolean
   local_id?: string
   user_display_name?: string
@@ -57,6 +61,7 @@ export interface OfflineChatMessage {
   content: string
   created_at: string
   synced_at: number
+  updated_at: number
   is_dirty?: boolean
   local_id?: string
 }
@@ -70,6 +75,7 @@ export interface OfflineMember {
   email: string
   avatar_url: string | null
   synced_at: number
+  updated_at: number
 }
 
 export interface OfflineTaskReminder {
@@ -80,6 +86,7 @@ export interface OfflineTaskReminder {
   sent: boolean
   created_at: string
   synced_at: number
+  updated_at: number
   is_dirty?: boolean
   local_id?: string
 }

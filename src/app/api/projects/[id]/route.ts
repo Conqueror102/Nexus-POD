@@ -12,17 +12,26 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { name, description } = await request.json()
+  const { name, description, updated_at: incoming_updated_at } = await request.json()
 
   // Only founder can edit projects
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select("pod_id, pods(founder_id)")
+    .select("pod_id, updated_at, pods(founder_id)")
     .eq("id", params.id)
     .single()
 
   if (projectError || !project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 })
+  }
+
+  // Conflict Resolution: Latest Timestamp Wins
+  if (incoming_updated_at && project.updated_at) {
+    const dbTime = new Date(project.updated_at).getTime()
+    if (incoming_updated_at < dbTime) {
+      // Incoming update is older than what's in DB, so we ignore it but return success (or current state)
+      return NextResponse.json(project)
+    }
   }
 
   // @ts-ignore
@@ -32,7 +41,11 @@ export async function PATCH(
 
   const { data, error } = await supabase
     .from("projects")
-    .update({ name, description, updated_at: new Date().toISOString() })
+    .update({ 
+      name, 
+      description, 
+      updated_at: incoming_updated_at ? new Date(incoming_updated_at).toISOString() : new Date().toISOString() 
+    })
     .eq("id", params.id)
     .select()
     .single()

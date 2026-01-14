@@ -216,10 +216,11 @@ export function useOfflineSync() {
       ...podData.pod,
       role: podData.role,
       synced_at: now,
+      updated_at: now,
     })
 
     await db.projects.bulkPut(
-      podData.projects.map(p => ({ ...p, synced_at: now }))
+      podData.projects.map(p => ({ ...p, synced_at: now, updated_at: now }))
     )
 
     const existingTasks = await db.tasks.where('project_id').anyOf(podData.projects.map(p => p.id)).toArray()
@@ -227,7 +228,7 @@ export function useOfflineSync() {
     
     for (const task of podData.tasks) {
       if (!dirtyTaskIds.has(task.id)) {
-        await db.tasks.put({ ...task, synced_at: now, is_dirty: false })
+        await db.tasks.put({ ...task, synced_at: now, updated_at: now, is_dirty: false })
       }
     }
 
@@ -241,6 +242,7 @@ export function useOfflineSync() {
         email: m.profiles.email,
         avatar_url: m.profiles.avatar_url,
         synced_at: now,
+        updated_at: now,
       }))
     )
 
@@ -249,7 +251,7 @@ export function useOfflineSync() {
     
     for (const msg of podData.chatMessages) {
       if (!dirtyMessageIds.has(msg.id)) {
-        await db.chatMessages.put({ ...msg, synced_at: now, is_dirty: false })
+        await db.chatMessages.put({ ...msg, synced_at: now, updated_at: now, is_dirty: false })
       }
     }
 
@@ -280,12 +282,13 @@ export function useOfflineSync() {
       ...data,
       created_by: createdBy,
       synced_at: Date.now(),
+      updated_at: Date.now(),
     }
     await db.projects.put(offlineProject)
     await db.pendingSync.add({
       type: 'project_create',
       entity_id: localId,
-      data: data,
+      data: { ...data, updated_at: Date.now() },
       created_at: Date.now(),
       retries: 0,
     })
@@ -294,12 +297,13 @@ export function useOfflineSync() {
   }, [])
 
   const updateProjectOffline = useCallback(async (projectId: string, updates: { name?: string; description?: string | null }) => {
-    await db.projects.update(projectId, updates)
+    const now = Date.now()
+    await db.projects.update(projectId, { ...updates, updated_at: now })
     await db.pendingSync.add({
       type: 'project_update',
       entity_id: projectId,
-      data: updates,
-      created_at: Date.now(),
+      data: { ...updates, updated_at: now },
+      created_at: now,
       retries: 0,
     })
     await updatePendingCount()
@@ -330,13 +334,15 @@ export function useOfflineSync() {
     labels: string[]
   }, createdBy: string) => {
     const localId = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    const now = Date.now()
     
     const offlineTask = {
       id: localId,
       ...taskData,
       status: 'not_started' as const,
       created_by: createdBy,
-      synced_at: Date.now(),
+      synced_at: now,
+      updated_at: now,
       is_dirty: true,
       local_id: localId,
     }
@@ -345,8 +351,8 @@ export function useOfflineSync() {
     await db.pendingSync.add({
       type: 'task_create',
       entity_id: localId,
-      data: taskData,
-      created_at: Date.now(),
+      data: { ...taskData, updated_at: now },
+      created_at: now,
       retries: 0,
     })
 
@@ -355,13 +361,14 @@ export function useOfflineSync() {
   }, [])
 
   const updateTaskOffline = useCallback(async (taskId: string, updates: { status?: 'not_started' | 'ongoing' | 'completed'; [key: string]: any }) => {
-    await db.tasks.update(taskId, { ...updates, is_dirty: true })
+    const now = Date.now()
+    await db.tasks.update(taskId, { ...updates, is_dirty: true, updated_at: now })
     
     await db.pendingSync.add({
       type: 'task_update',
       entity_id: taskId,
-      data: updates,
-      created_at: Date.now(),
+      data: { ...updates, updated_at: now },
+      created_at: now,
       retries: 0,
     })
 
@@ -382,6 +389,7 @@ export function useOfflineSync() {
 
   const sendChatOffline = useCallback(async (podId: string, content: string, userId: string) => {
     const localId = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    const now = Date.now()
     
     const offlineMessage = {
       id: localId,
@@ -389,7 +397,8 @@ export function useOfflineSync() {
       user_id: userId,
       content,
       created_at: new Date().toISOString(),
-      synced_at: Date.now(),
+      synced_at: now,
+      updated_at: now,
       is_dirty: true,
       local_id: localId,
     }
@@ -398,8 +407,8 @@ export function useOfflineSync() {
     await db.pendingSync.add({
       type: 'chat_create',
       entity_id: localId,
-      data: { pod_id: podId, content },
-      created_at: Date.now(),
+      data: { pod_id: podId, content, updated_at: now },
+      created_at: now,
       retries: 0,
     })
 
@@ -409,6 +418,7 @@ export function useOfflineSync() {
 
   const addCommentOffline = useCallback(async (taskId: string, content: string, user: Profile) => {
     const localId = 'local_cmt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    const now = Date.now()
     
     const offlineComment: OfflineTaskComment = {
       id: localId,
@@ -416,7 +426,8 @@ export function useOfflineSync() {
       user_id: user.id,
       content,
       created_at: new Date().toISOString(),
-      synced_at: Date.now(),
+      synced_at: now,
+      updated_at: now,
       is_dirty: true,
       local_id: localId,
       user_display_name: user.display_name || undefined,
@@ -427,8 +438,8 @@ export function useOfflineSync() {
     await db.pendingSync.add({
       type: 'comment_create',
       entity_id: localId,
-      data: { task_id: taskId, content },
-      created_at: Date.now(),
+      data: { task_id: taskId, content, updated_at: now },
+      created_at: now,
       retries: 0,
     })
 

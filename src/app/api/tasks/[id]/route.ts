@@ -13,6 +13,7 @@ export async function PATCH(
   }
 
   const updates = await request.json()
+  const { updated_at: incoming_updated_at } = updates
 
   // Get task with pod founder info
   const { data: task, error: taskError } = await supabase
@@ -23,6 +24,14 @@ export async function PATCH(
 
   if (taskError || !task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 })
+  }
+
+  // Conflict Resolution: Latest Timestamp Wins
+  if (incoming_updated_at && task.updated_at) {
+    const dbTime = new Date(task.updated_at).getTime()
+    if (incoming_updated_at < dbTime) {
+      return NextResponse.json(task)
+    }
   }
 
   // @ts-ignore
@@ -36,10 +45,14 @@ export async function PATCH(
 
   // If not founder, only status can be updated
   const finalUpdates = isFounder ? updates : { status: updates.status }
+  delete finalUpdates.updated_at // Remove from object to avoid manual conflict
 
   const { data, error } = await supabase
     .from("tasks")
-    .update({ ...finalUpdates, updated_at: new Date().toISOString() })
+    .update({ 
+      ...finalUpdates, 
+      updated_at: incoming_updated_at ? new Date(incoming_updated_at).toISOString() : new Date().toISOString() 
+    })
     .eq("id", params.id)
     .select()
     .single()
