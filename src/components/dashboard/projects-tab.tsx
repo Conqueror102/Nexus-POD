@@ -21,6 +21,7 @@ import { format, isPast } from "date-fns"
 import type { DashboardTabProps, TaskWithAssignee, PodMemberWithProfile } from "./types"
 import { statusColors, statusLabels } from "./types"
 import type { Project } from "@/lib/types"
+import { toast } from "sonner"
 
 interface ProjectsTabProps {
   projects: Project[]
@@ -33,17 +34,9 @@ interface ProjectsTabProps {
   onTaskClick: (task: TaskWithAssignee) => void
   onUpdateTaskStatus: (taskId: string, status: string) => void
   onCreateProject: (name: string, description: string) => Promise<void>
-  onCreateTask: (data: {
-    project_id: string
-    name: string
-    description: string
-    due_date: string
-    assigned_to: string
-    priority: "low" | "medium" | "high"
-    assigned_to: string
-    priority: "low" | "medium" | "high"
-    labels: string[]
-  }) => Promise<void>
+  onUpdateProject: (id: string, name: string, description: string) => Promise<void>
+  onCreateTask: (data: any) => Promise<void>
+  onUpdateTask: (id: string, data: any) => Promise<void>
   onDeleteTask: (taskId: string) => void
   onDeleteProject: (projectId: string) => void
   user: Profile | null
@@ -60,20 +53,24 @@ export function ProjectsTab({
   onTaskClick,
   onUpdateTaskStatus,
   onCreateProject,
-  onCreateProject,
+  onUpdateProject,
   onCreateTask,
+  onUpdateTask,
   onDeleteTask,
   onDeleteProject,
   user,
 }: ProjectsTabProps) {
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const [editProjectOpen, setEditProjectOpen] = useState(false)
   const [createTaskOpen, setCreateTaskOpen] = useState(false)
+  const [editTaskOpen, setEditTaskOpen] = useState(false)
   const [deleteTaskOpen, setDeleteTaskOpen] = useState(false)
   const [deleteProjectOpen, setDeleteProjectOpen] = useState(false)
+  
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null)
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
-  const [activeLabels, setActiveLabels] = useState<string[]>([])
-  const [newLabel, setNewLabel] = useState("")
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [editingTask, setEditingTask] = useState<TaskWithAssignee | null>(null)
 
   const [newProjectName, setNewProjectName] = useState("")
   const [newProjectDescription, setNewProjectDescription] = useState("")
@@ -83,6 +80,7 @@ export function ProjectsTab({
   const [newTaskAssignee, setNewTaskAssignee] = useState("")
   const [newTaskPriority, setNewTaskPriority] = useState<"low" | "medium" | "high">("medium")
   const [selectedProjectId, setSelectedProjectId] = useState("")
+  const [submitting, setSubmitting] = useState(false)
 
   const filteredTasks = tasks.filter(t => {
     const matchesSearch = !searchQuery || 
@@ -110,6 +108,15 @@ export function ProjectsTab({
     setSubmitting(false)
   }
 
+  async function handleUpdateProject() {
+    if (!editingProject || !newProjectName.trim()) return
+    setSubmitting(true)
+    await onUpdateProject(editingProject.id, newProjectName, newProjectDescription)
+    setEditProjectOpen(false)
+    setEditingProject(null)
+    setSubmitting(false)
+  }
+
   async function handleCreateTask() {
     if (!newTaskName.trim() || !newTaskDescription.trim() || !newTaskDueDate || !selectedProjectId) return
     setSubmitting(true)
@@ -120,361 +127,272 @@ export function ProjectsTab({
       due_date: newTaskDueDate,
       assigned_to: newTaskAssignee,
       priority: newTaskPriority,
+    })
+    setCreateTaskOpen(false)
+    resetTaskForm()
+    setSubmitting(false)
+  }
+
+  async function handleUpdateTask() {
+    if (!editingTask || !newTaskName.trim()) return
+    setSubmitting(true)
+    await onUpdateTask(editingTask.id, {
+      name: newTaskName,
+      description: newTaskDescription,
       due_date: newTaskDueDate,
       assigned_to: newTaskAssignee,
       priority: newTaskPriority,
-      labels: activeLabels,
     })
-    setCreateTaskOpen(false)
+    setEditTaskOpen(false)
+    setEditingTask(null)
+    setSubmitting(false)
+  }
+
+  function resetTaskForm() {
     setNewTaskName("")
     setNewTaskDescription("")
     setNewTaskDueDate("")
     setNewTaskAssignee("")
     setNewTaskPriority("medium")
-    setActiveLabels([])
     setSelectedProjectId("")
-    setSubmitting(false)
   }
 
-  function handleAddLabel(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && newLabel.trim()) {
-      e.preventDefault()
-      if (!activeLabels.includes(newLabel.trim())) {
-        setActiveLabels([...activeLabels, newLabel.trim()])
-      }
-      setNewLabel("")
-    }
+  function startEditProject(project: Project) {
+    setEditingProject(project)
+    setNewProjectName(project.name)
+    setNewProjectDescription(project.description || "")
+    setEditProjectOpen(true)
   }
 
-  function removeLabel(label: string) {
-    setActiveLabels(activeLabels.filter(l => l !== label))
-  }
-
-  const canDeleteProject = isFounder
-  const canEditProject = isFounder
-
-  function canDeleteTask(task: TaskWithAssignee) {
-    return isFounder || task.created_by === user?.id
-  }
-
-  function canEditTask(task: TaskWithAssignee) {
-    return isFounder || task.assigned_to === user?.id || task.created_by === user?.id
+  function startEditTask(task: TaskWithAssignee) {
+    setEditingTask(task)
+    setNewTaskName(task.name)
+    setNewTaskDescription(task.description || "")
+    setNewTaskDueDate(task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : "")
+    setNewTaskAssignee(task.assigned_to || "")
+    setNewTaskPriority(task.priority)
+    setEditTaskOpen(true)
   }
 
   return (
     <div className="space-y-6">
-      {isFounder && (
-        <div className="flex justify-end gap-2">
-          <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+      <div className="flex justify-end gap-2">
+        <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
+          {isFounder && (
             <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                New Project
-              </Button>
+              <Button><Plus className="w-4 h-4 mr-2" />New Project</Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Project</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Project Name</Label>
-                  <Input
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Project name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    value={newProjectDescription}
-                    onChange={(e) => setNewProjectDescription(e.target.value)}
-                    placeholder="Project description..."
-                    className="resize-none"
-                    rows={3}
-                  />
-                </div>
+          )}
+          <DialogContent>
+            <DialogHeader><DialogTitle>Create New Project</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Project Name</Label>
+                <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Project name" />
               </div>
-              <DialogFooter>
-                <Button onClick={handleCreateProject} disabled={submitting || !newProjectName.trim()}>
-                  Create Project
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea value={newProjectDescription} onChange={(e) => setNewProjectDescription(e.target.value)} placeholder="Project description..." className="resize-none" rows={3} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleCreateProject} disabled={submitting || !newProjectName.trim()}>Create Project</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-          <Dialog open={createTaskOpen} onOpenChange={setCreateTaskOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="w-4 h-4 mr-2" />
-                New Task
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Task</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Project</Label>
-                  <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Task Name</Label>
-                  <Input
-                    value={newTaskName}
-                    onChange={(e) => setNewTaskName(e.target.value)}
-                    placeholder="Task name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    value={newTaskDescription}
-                    onChange={(e) => setNewTaskDescription(e.target.value)}
-                    placeholder="Task description..."
-                    className="resize-none"
-                    rows={3}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Due Date</Label>
-                  <Input
-                    type="datetime-local"
-                    value={newTaskDueDate}
-                    onChange={(e) => setNewTaskDueDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Priority</Label>
-                  <Select value={newTaskPriority} onValueChange={(v) => setNewTaskPriority(v as "low" | "medium" | "high")}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">
-                        <div className="flex items-center gap-2">
-                          <ArrowDownCircle className="w-4 h-4 text-blue-500" />
-                          Low
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="medium">
-                        <div className="flex items-center gap-2">
-                          <ArrowRightCircle className="w-4 h-4 text-amber-500" />
-                          Medium
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="high">
-                        <div className="flex items-center gap-2">
-                          <ArrowUpCircle className="w-4 h-4 text-red-500" />
-                          High
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Assign To</Label>
-                  <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {members.map((m) => (
-                        <SelectItem key={m.profiles.id} value={m.profiles.id}>
-                          {m.profiles.display_name || m.profiles.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                <div className="space-y-2">
-                  <Label>Assign To</Label>
-                  <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {members.map((m) => (
-                        <SelectItem key={m.profiles.id} value={m.profiles.id}>
-                          {m.profiles.display_name || m.profiles.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Labels</Label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {activeLabels.map(label => (
-                      <Badge key={label} variant="secondary" className="cursor-pointer" onClick={() => removeLabel(label)}>
-                        {label} &times;
-                      </Badge>
+        <Dialog open={createTaskOpen} onOpenChange={setCreateTaskOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline"><Plus className="w-4 h-4 mr-2" />New Task</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Create New Task</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Project</Label>
+                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                  <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
-                  </div>
-                  <Input 
-                    value={newLabel} 
-                    onChange={(e) => setNewLabel(e.target.value)} 
-                    onKeyDown={handleAddLabel}
-                    placeholder="Type and press Enter to add label" 
-                  />
-                </div>
+                  </SelectContent>
+                </Select>
               </div>
-              <DialogFooter>
-                <Button onClick={handleCreateTask} disabled={submitting || !newTaskName.trim() || !selectedProjectId}>
-                  Create Task
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      )}
+              <div className="space-y-2">
+                <Label>Task Name</Label>
+                <Input value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} placeholder="Task name" />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea value={newTaskDescription} onChange={(e) => setNewTaskDescription(e.target.value)} placeholder="Task description..." className="resize-none" rows={3} />
+              </div>
+              <div className="space-y-2">
+                <Label>Due Date</Label>
+                <Input type="datetime-local" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select value={newTaskPriority} onValueChange={(v) => setNewTaskPriority(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Assign To</Label>
+                <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
+                  <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
+                  <SelectContent>
+                    {members.map((m) => (
+                      <SelectItem key={m.profiles.id} value={m.profiles.id}>{m.profiles.display_name || m.profiles.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleCreateTask} disabled={submitting || !newTaskName.trim() || !selectedProjectId}>Create Task</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-      {filteredProjects.length > 0 ? (
-        <div className="space-y-6">
-          {filteredProjects.map((project) => {
-            const projectTasks = filteredTasks.filter(t => t.project_id === project.id)
-            const projectCompleted = projectTasks.filter(t => t.status === "completed").length
-            const projectProgress = projectTasks.length > 0 ? Math.round((projectCompleted / projectTasks.length) * 100) : 0
-            
-            return (
-              <Card key={project.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <CardTitle>{project.name}</CardTitle>
-                      {project.description && (
-                        <CardDescription className="mt-1">{project.description}</CardDescription>
+      <Dialog open={editProjectOpen} onOpenChange={setEditProjectOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Project</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Project Name</Label>
+              <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea value={newProjectDescription} onChange={(e) => setNewProjectDescription(e.target.value)} className="resize-none" rows={3} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleUpdateProject} disabled={submitting || !newProjectName.trim()}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editTaskOpen} onOpenChange={setEditTaskOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Task</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Task Name</Label>
+              <Input value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea value={newTaskDescription} onChange={(e) => setNewTaskDescription(e.target.value)} className="resize-none" rows={3} />
+            </div>
+            <div className="space-y-2">
+              <Label>Due Date</Label>
+              <Input type="datetime-local" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={newTaskPriority} onValueChange={(v) => setNewTaskPriority(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Assign To</Label>
+              <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
+                <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.profiles.id} value={m.profiles.id}>{m.profiles.display_name || m.profiles.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleUpdateTask} disabled={submitting || !newTaskName.trim()}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {filteredProjects.map((project) => {
+        const projectTasks = filteredTasks.filter(t => t.project_id === project.id)
+        const projectProgress = projectTasks.length > 0 ? Math.round((projectTasks.filter(t => t.status === "completed").length / projectTasks.length) * 100) : 0
+        return (
+          <Card key={project.id}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div className="flex-1">
+                <CardTitle className="text-lg">{project.name}</CardTitle>
+                <CardDescription className="line-clamp-2">{project.description}</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{projectTasks.length} tasks</Badge>
+                {isFounder && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => startEditProject(project)}><Pencil className="w-4 h-4 mr-2" />Edit Project</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => { setProjectToDelete(project.id); setDeleteProjectOpen(true) }} className="text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete Project</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2 mb-4">
+                <Progress value={projectProgress} className="h-1.5" />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{projectProgress}%</span>
+              </div>
+              <div className="space-y-2">
+                {projectTasks.map((task) => (
+                  <div key={task.id} className="group flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer" onClick={() => onTaskClick(task)}>
+                    <div onClick={(e) => { e.stopPropagation(); onUpdateTaskStatus(task.id, task.status === 'completed' ? 'ongoing' : 'completed') }} className="flex-shrink-0">
+                      {task.status === "completed" ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : task.status === "ongoing" ? <Clock className="w-5 h-5 text-amber-500" /> : <Circle className="w-5 h-5 text-muted-foreground" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${task.status === "completed" ? "text-muted-foreground line-through" : ""}`}>{task.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}><Calendar className="w-3 h-3 inline mr-1" />{format(new Date(task.due_date), "MMM d")}</span>
+                        {task.profiles && <span className="text-xs text-muted-foreground"><Users className="w-3 h-3 inline mr-1" />{task.profiles.display_name || task.profiles.email}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(isFounder || task.assigned_to === user?.id || task.created_by === user?.id) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); startEditTask(task) }}><Pencil className="w-4 h-4 mr-2" />Edit Task</DropdownMenuItem>
+                            {isFounder && (
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); setDeleteTaskOpen(true) }} className="text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete Task</DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
-                    <div className="text-right">
-                      <Badge variant="secondary">
-                        {projectTasks.length} tasks
-                      </Badge>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Progress value={projectProgress} className="w-24 h-2" />
-                        <span className="text-xs text-muted-foreground">{projectProgress}%</span>
-                      </div>
-                        <span className="text-xs text-muted-foreground">{projectProgress}%</span>
-                      </div>
-                    </div>
-                    {canDeleteProject && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 ml-2">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem 
-                            onClick={() => { setProjectToDelete(project.id); setDeleteProjectOpen(true) }}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete Project
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {projectTasks.length > 0 ? (
-                    <div className="space-y-2">
-                      {projectTasks.map((task) => (
-                        <button
-                          key={task.id}
-                          onClick={() => onTaskClick(task)}
-                          className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-left"
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              const nextStatus = task.status === "not_started" ? "ongoing" : task.status === "ongoing" ? "completed" : "not_started"
-                              onUpdateTaskStatus(task.id, nextStatus)
-                            }}
-                            className="flex-shrink-0"
-                          >
-                            {task.status === "completed" ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                            ) : task.status === "ongoing" ? (
-                              <Clock className="w-5 h-5 text-amber-500" />
-                            ) : (
-                              <Circle className="w-5 h-5 text-muted-foreground" />
-                            )}
-                          </button>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium ${task.status === "completed" ? "text-muted-foreground line-through" : ""}`}>
-                              {task.name}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className={`text-xs ${isPast(new Date(task.due_date)) && task.status !== "completed" ? "text-destructive" : "text-muted-foreground"}`}>
-                                <Calendar className="w-3 h-3 inline mr-1" />
-                                {format(new Date(task.due_date), "MMM d")}
-                              </span>
-                              {task.profiles && (
-                                <span className="text-xs text-muted-foreground">
-                                  <Users className="w-3 h-3 inline mr-1" />
-                                  {task.profiles.display_name || task.profiles.email}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <Badge variant="outline">
-                            {statusLabels[task.status]}
-                          </Badge>
-                          {canDeleteTask(task) && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" 
-                              onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); setDeleteTaskOpen(true) }}
-                            >
-                              <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                            </Button>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">No tasks in this project</p>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <FolderKanban className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchQuery ? "No projects found" : "No projects yet"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {searchQuery ? "Try a different search term" : "Create your first project to start organizing tasks"}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+                ))}
+                {projectTasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No tasks yet</p>}
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })}
 
       <AlertDialog open={deleteTaskOpen} onOpenChange={setDeleteTaskOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Delete Task?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTaskToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (taskToDelete) onDeleteTask(taskToDelete); setTaskToDelete(null) }} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -482,12 +400,9 @@ export function ProjectsTab({
 
       <AlertDialog open={deleteProjectOpen} onOpenChange={setDeleteProjectOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the project and all its tasks.</AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Delete Project?</AlertDialogTitle><AlertDialogDescription>This will permanently delete the project and all its tasks.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setProjectToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (projectToDelete) onDeleteProject(projectToDelete); setProjectToDelete(null) }} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

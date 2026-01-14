@@ -32,10 +32,11 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .single()
 
-  if (!membership || membership.role !== 'founder') {
-    return NextResponse.json({ error: 'Only founders can create tasks' }, { status: 403 })
+  if (!membership) {
+    return NextResponse.json({ error: 'Not a member of this pod' }, { status: 403 })
   }
 
+  // Members can create tasks in projects
   const { data: task, error } = await supabase
     .from('tasks')
     .insert({
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
       name,
       description,
       due_date,
-      assigned_to,
+      assigned_to: assigned_to || null,
       priority: priority || 'medium',
       created_by: user.id,
     })
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create task' }, { status: 500 })
   }
 
+  // Create reminders
   const reminderHours = [24, 12, 6, 1]
   const dueDate = new Date(due_date)
   
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
         to: assignee.email,
         subject: emailContent.subject,
         html: emailContent.html,
-      })
+      }).catch(err => console.error("Email error:", err))
     }
 
     await supabase.from('notifications').insert({

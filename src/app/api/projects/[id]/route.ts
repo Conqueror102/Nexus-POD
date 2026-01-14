@@ -1,132 +1,83 @@
-import { createClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
-
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const supabase = await createClient()
-  const { id } = await params
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('id', id)
-    .single()
-
-  if (projectError || !project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
-  }
-
-  const { data: membership } = await supabase
-    .from('pod_members')
-    .select('role')
-    .eq('pod_id', project.pod_id)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!membership) {
-    return NextResponse.json({ error: 'Not a member of this pod' }, { status: 403 })
-  }
-
-  return NextResponse.json({ ...project, role: membership.role })
-}
+import { createClient } from "@/lib/supabase/server"
+import { NextResponse } from "next/server"
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   const supabase = await createClient()
-  const { id } = await params
-  
   const { data: { user } } = await supabase.auth.getUser()
+
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data: project } = await supabase
-    .from('projects')
-    .select('pod_id')
-    .eq('id', id)
+  const { name, description } = await request.json()
+
+  // Only founder can edit projects
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("pod_id, pods(founder_id)")
+    .eq("id", params.id)
     .single()
 
-  if (!project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  if (projectError || !project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 })
   }
 
-  const { data: membership } = await supabase
-    .from('pod_members')
-    .select('role')
-    .eq('pod_id', project.pod_id)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!membership || membership.role !== 'founder') {
-    return NextResponse.json({ error: 'Only founders can edit projects' }, { status: 403 })
+  // @ts-ignore
+  if (project.pods.founder_id !== user.id) {
+    return NextResponse.json({ error: "Only the founder can edit projects" }, { status: 403 })
   }
 
-  const body = await request.json()
-  const { name, description } = body
-
-  const { data: updated, error } = await supabase
-    .from('projects')
+  const { data, error } = await supabase
+    .from("projects")
     .update({ name, description, updated_at: new Date().toISOString() })
-    .eq('id', id)
+    .eq("id", params.id)
     .select()
     .single()
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json(updated)
+  return NextResponse.json(data)
 }
 
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   const supabase = await createClient()
-  const { id } = await params
-  
   const { data: { user } } = await supabase.auth.getUser()
+
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data: project } = await supabase
-    .from('projects')
-    .select('pod_id')
-    .eq('id', id)
+  // Only founder can delete projects
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("pod_id, pods(founder_id)")
+    .eq("id", params.id)
     .single()
 
-  if (!project) {
-    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  if (projectError || !project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 })
   }
 
-  const { data: membership } = await supabase
-    .from('pod_members')
-    .select('role')
-    .eq('pod_id', project.pod_id)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!membership || membership.role !== 'founder') {
-    return NextResponse.json({ error: 'Only founders can delete projects' }, { status: 403 })
+  // @ts-ignore
+  if (project.pods.founder_id !== user.id) {
+    return NextResponse.json({ error: "Only the founder can delete projects" }, { status: 403 })
   }
 
   const { error } = await supabase
-    .from('projects')
+    .from("projects")
     .delete()
-    .eq('id', id)
+    .eq("id", params.id)
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })

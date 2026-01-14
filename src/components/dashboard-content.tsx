@@ -9,6 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -17,7 +19,7 @@ import { toast } from "sonner"
 import { 
   Hexagon, Plus, FolderKanban, Users, MessageSquare,
   Loader2, Copy, Check, Send, MoreVertical, Trash2, Link as LinkIcon,
-  BarChart3, Search, Download, Filter, HardDrive, Menu, Image as ImageIcon
+  BarChart3, Search, Download, Filter, HardDrive, Menu, Image as ImageIcon, Settings
 } from "lucide-react"
 import { format, formatDistanceToNow, isPast } from "date-fns"
 import type { PodWithRole, Project, Task, Notification, ActivityLog, PodFileWithProfile } from "@/lib/types"
@@ -80,21 +82,19 @@ export function DashboardContent() {
   const [submitting, setSubmitting] = useState(false)
   const [deletePodDialogOpen, setDeletePodDialogOpen] = useState(false)
 
+  const [editPodTitle, setEditPodTitle] = useState("")
+  const [editPodSummary, setEditPodSummary] = useState("")
+
   const fetchPods = useCallback(async () => {
     try {
-      // If offline, load from IndexedDB
       if (!isOnline) {
         try {
           const offlinePods = await db.pods.toArray()
           setPods(offlinePods)
-          if (offlinePods.length > 0 && !selectedPod) {
-            setSelectedPod(offlinePods[0])
-          }
+          if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
           setLoading(false)
           return
-        } catch (error) {
-          console.error('Error loading offline pods:', error)
-        }
+        } catch (error) { console.error('Error loading offline pods:', error) }
       }
 
       try {
@@ -102,49 +102,26 @@ export function DashboardContent() {
         if (res.ok) {
           const data = await res.json()
           setPods(data)
-          // Save to offline DB
           data.forEach(pod => db.pods.put({ ...pod, synced_at: Date.now() }))
-          if (data.length > 0 && !selectedPod) {
-            setSelectedPod(data[0])
-          }
+          if (data.length > 0 && !selectedPod) setSelectedPod(data[0])
         } else {
-          // If fetch fails, try to load from IndexedDB
           const offlinePods = await db.pods.toArray()
           setPods(offlinePods)
-          if (offlinePods.length > 0 && !selectedPod) {
-            setSelectedPod(offlinePods[0])
-          }
+          if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
         }
       } catch (fetchError) {
-        console.warn('Error fetching pods from API, loading from offline DB:', fetchError)
-        // Load from offline DB as fallback
-        try {
-          const offlinePods = await db.pods.toArray()
-          setPods(offlinePods)
-          if (offlinePods.length > 0 && !selectedPod) {
-            setSelectedPod(offlinePods[0])
-          }
-        } catch (dbError) {
-          console.error('Error loading offline pods:', dbError)
-          setPods([])
-        }
+        const offlinePods = await db.pods.toArray()
+        setPods(offlinePods)
+        if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
       }
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }, [isOnline, selectedPod])
 
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch("/api/notifications", { signal: AbortSignal.timeout(10000) })
-      if (res.ok) {
-        const data = await res.json()
-        setNotifications(data)
-      }
-    } catch (error) {
-      console.warn('Error fetching notifications:', error)
-      // Silently fail, notifications are not critical
-    }
+      if (res.ok) setNotifications(await res.json())
+    } catch (error) { console.warn('Error fetching notifications:', error) }
   }, [])
 
   useEffect(() => {
@@ -152,51 +129,21 @@ export function DashboardContent() {
     fetchNotifications()
   }, [fetchPods, fetchNotifications])
 
-  // Reminders
   useReminders(tasks, user)
 
   useEffect(() => {
-    if (selectedPod) fetchPodData()
+    if (selectedPod) {
+      fetchPodData()
+      setEditPodTitle(selectedPod.title)
+      setEditPodSummary(selectedPod.summary || "")
+    }
   }, [selectedPod])
 
   const fetchPodData = useCallback(async () => {
     if (!selectedPod) return
 
     try {
-      // If offline, load from IndexedDB
       if (!isOnline) {
-        try {
-          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
-          const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
-          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
-          
-          setProjects(offlineProjects)
-          setTasks(offlineTasks)
-          setChatMessages(offlineMessages)
-          setMembers([])
-          setActivityLogs([])
-          setPodFiles([])
-          return
-        } catch (error) {
-          console.error('Error loading offline data:', error)
-          // Continue to try API
-        }
-      }
-
-      const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
-        fetch(`/api/projects?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-        fetch(`/api/tasks?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-        fetch(`/api/pods/${selectedPod.id}/members`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-        fetch(`/api/chat?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-        fetch(`/api/activity?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-        fetch(`/api/files?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(e => ({ ok: false })),
-      ])
-
-      // Check if all API calls failed - if so, load from IndexedDB
-      const allFailed = !projectsRes.ok && !tasksRes.ok && !membersRes.ok && !chatRes.ok
-      
-      if (allFailed) {
-        // All API calls failed, load from IndexedDB
         try {
           const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
           const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
@@ -204,54 +151,40 @@ export function DashboardContent() {
           const offlineMembers = await db.members.where('pod_id').equals(selectedPod.id).toArray()
           
           setProjects(offlineProjects)
-          setTasks(offlineTasks)
-          setChatMessages(offlineMessages)
+          setTasks(offlineTasks as any)
+          setChatMessages(offlineMessages as any)
           setMembers(offlineMembers.map(m => ({
             id: m.id,
             pod_id: m.pod_id,
             user_id: m.user_id,
             role: m.role,
-            profiles: {
-              display_name: m.display_name,
-              email: m.email,
-              avatar_url: m.avatar_url,
-            }
+            profiles: { display_name: m.display_name, email: m.email, avatar_url: m.avatar_url }
           })))
           setActivityLogs([])
           setPodFiles([])
           return
-        } catch (dbError) {
-          console.error('Error loading offline data:', dbError)
-          // Continue to try API data if available
-        }
+        } catch (error) { console.error('Error loading offline data:', error) }
       }
 
-      const projectsData = projectsRes.ok ? await projectsRes.json().catch(() => []) : []
-      const tasksData = tasksRes.ok ? await tasksRes.json().catch(() => []) : []
-      const membersData = membersRes.ok ? await membersRes.json().catch(() => []) : []
-      const chatData = chatRes.ok ? await chatRes.json().catch(() => []) : []
-      const activityData = activityRes.ok ? await activityRes.json().catch(() => []) : []
-      const filesData = filesRes.ok ? await filesRes.json().catch(() => []) : []
+      const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
+        fetch(`/api/projects?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+        fetch(`/api/tasks?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+        fetch(`/api/pods/${selectedPod.id}/members`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+        fetch(`/api/chat?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+        fetch(`/api/activity?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+        fetch(`/api/files?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
+      ])
 
-      // If some API calls failed, merge with offline data
-      if (!projectsRes.ok || !tasksRes.ok || !chatRes.ok) {
-        try {
-          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
-          const offlineTasks = await db.tasks.where('project_id').anyOf((projectsData.length > 0 ? projectsData : offlineProjects).map(p => p.id)).toArray()
-          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
-          
-          setProjects(projectsData.length > 0 ? projectsData : offlineProjects)
-          setTasks(tasksData.length > 0 ? tasksData : offlineTasks)
-          setChatMessages(chatData.length > 0 ? chatData : offlineMessages)
-        } catch (dbError) {
-          console.error('Error merging offline data:', dbError)
-        }
-      } else {
-        setProjects(projectsData)
-        setTasks(tasksData)
-        setChatMessages(chatData)
-      }
+      const projectsData = projectsRes.ok ? await (projectsRes as Response).json() : []
+      const tasksData = tasksRes.ok ? await (tasksRes as Response).json() : []
+      const membersData = membersRes.ok ? await (membersRes as Response).json() : []
+      const chatData = chatRes.ok ? await (chatRes as Response).json() : []
+      const activityData = activityRes.ok ? await (activityRes as Response).json() : []
+      const filesData = filesRes.ok ? await (filesRes as Response).json() : []
 
+      setProjects(projectsData)
+      setTasks(tasksData)
+      setChatMessages(chatData)
       setMembers(membersData)
       setActivityLogs(activityData)
       setPodFiles(filesData)
@@ -266,21 +199,7 @@ export function DashboardContent() {
           chatMessages: chatData,
         })
       }
-    } catch (error) {
-      console.warn('Error fetching pod data:', error)
-      // Try to load from offline DB as last resort
-      try {
-        const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
-        const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
-        const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
-        
-        setProjects(offlineProjects)
-        setTasks(offlineTasks)
-        setChatMessages(offlineMessages)
-      } catch (dbError) {
-        console.error('Error loading offline fallback data:', dbError)
-      }
-    }
+    } catch (error) { console.warn('Error fetching pod data:', error) }
   }, [selectedPod, isOnline, cachePodData])
 
   useEffect(() => {
@@ -289,42 +208,18 @@ export function DashboardContent() {
     const channel = supabase
       .channel(`pod-${selectedPod.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `pod_id=eq.${selectedPod.id}` }, async (payload) => {
-        const { data: message } = await supabase
-          .from('chat_messages')
-          .select(`*, profiles:user_id (id, display_name, email, avatar_url)`)
-          .eq('id', payload.new.id)
-          .single()
+        const { data: message } = await supabase.from('chat_messages').select(`*, profiles:user_id (id, display_name, email, avatar_url)`).eq('id', payload.new.id).single()
         if (message) setChatMessages(prev => [...prev, message as ChatMessageWithProfile])
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchPodData())
       .subscribe()
 
-    const notifChannel = supabase
-      .channel(`notifications-${user.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, async (payload) => {
-        const { data: notification } = await supabase
-          .from('notifications')
-          .select(`*, pods (id, title, npn), tasks (id, name)`)
-          .eq('id', payload.new.id)
-          .single()
-        if (notification) {
-          setNotifications(prev => [notification as Notification, ...prev])
-          toast(notification.title, { description: notification.message })
-        }
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-      supabase.removeChannel(notifChannel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [selectedPod, user, supabase, fetchPodData])
 
   async function handleCreatePod(title: string, summary: string) {
     try {
-      // Check if online
-      if (!navigator.onLine) {
-        // Save offline pod to IndexedDB
+      if (!isOnline) {
         const offlinePod = {
           id: `local_${Date.now()}`,
           npn: `NP-${Math.floor(Math.random() * 100000)}`,
@@ -337,115 +232,97 @@ export function DashboardContent() {
           synced_at: 0,
         }
         await db.pods.add(offlinePod)
-        
-        // Add to pending sync
-        await db.pendingSync.add({
-          type: 'task_create',
-          entity_id: offlinePod.id,
-          data: { title, summary, type: 'pod' },
-          created_at: Date.now(),
-          retries: 0,
-        })
-        
         setPods(prev => [offlinePod, ...prev])
         setSelectedPod(offlinePod)
-        toast.success("Pod saved offline. It will sync when you're back online.")
+        toast.success("Pod saved offline")
         return
       }
 
-      const res = await fetch("/api/pods", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, summary }),
-      })
+      const res = await fetch("/api/pods", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, summary }) })
       if (res.ok) {
         const pod = await res.json()
-        // Save to offline DB as synced
         await db.pods.put({ ...pod, role: 'founder', synced_at: Date.now() })
         setPods(prev => [{ ...pod, role: 'founder' }, ...prev])
         setSelectedPod({ ...pod, role: 'founder' })
         toast.success("Pod created successfully!")
       }
-    } catch (error) {
-      console.error('Pod creation error:', error)
-      // If network error, save offline
-      if (!navigator.onLine) {
-        const offlinePod = {
-          id: `local_${Date.now()}`,
-          npn: `NP-${Math.floor(Math.random() * 100000)}`,
-          title,
-          summary: summary || null,
-          avatar_url: null,
-          founder_id: user?.id || '',
-          storage_used_bytes: 0,
-          role: 'founder' as const,
-          synced_at: 0,
-        }
-        await db.pods.add(offlinePod)
-        setPods(prev => [offlinePod, ...prev])
-        toast.success("Pod saved offline. It will sync when you're back online.")
-      } else {
-        toast.error("Failed to create pod")
+    } catch (error) { toast.error("Failed to create pod") }
+  }
+
+  async function handleUpdatePod() {
+    if (!selectedPod || !editPodTitle.trim()) return
+    setSubmitting(true)
+    try {
+      if (!isOnline) {
+        const updatedPod = { ...selectedPod, title: editPodTitle, summary: editPodSummary }
+        await db.pods.put(updatedPod)
+        setSelectedPod(updatedPod)
+        setPods(prev => prev.map(p => p.id === selectedPod.id ? updatedPod : p))
+        toast.success("Pod updated offline")
+        setPodSettingsOpen(false)
+        return
       }
-    }
+
+      const res = await fetch(`/api/pods/${selectedPod.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editPodTitle, summary: editPodSummary })
+      })
+      if (res.ok) {
+        const pod = await res.json()
+        const updatedPod = { ...selectedPod, ...pod }
+        await db.pods.put({ ...updatedPod, synced_at: Date.now() })
+        setSelectedPod(updatedPod)
+        setPods(prev => prev.map(p => p.id === selectedPod.id ? updatedPod : p))
+        toast.success("Pod updated successfully")
+        setPodSettingsOpen(false)
+      }
+    } finally { setSubmitting(false) }
   }
 
   async function handleCreateProject(name: string, description: string) {
     if (!selectedPod || !user) return
-    try {
-      if (!isOnline) {
-        const offlineProject = await createProjectOffline({ pod_id: selectedPod.id, name, description }, user.id)
-        setProjects(prev => [offlineProject as Project, ...prev])
-        toast.success("Project saved offline")
-        return
-      }
-
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pod_id: selectedPod.id, name, description }),
-      })
-      if (res.ok) {
-        const project = await res.json()
-        await db.projects.put({ ...project, synced_at: Date.now() })
-        setProjects(prev => [project, ...prev])
-        toast.success("Project created successfully!")
-      }
-    } catch (error) {
-      console.error('Project creation error:', error)
-      toast.error("Failed to create project")
+    if (!isOnline) {
+      const offlineProject = await createProjectOffline({ pod_id: selectedPod.id, name, description }, user.id)
+      setProjects(prev => [offlineProject as Project, ...prev])
+      toast.success("Project saved offline")
+      return
     }
+    const res = await fetch("/api/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pod_id: selectedPod.id, name, description }) })
+    if (res.ok) { fetchPodData(); toast.success("Project created") }
   }
 
-  async function handleCreateTask(data: { project_id: string; name: string; description: string; due_date: string; assigned_to: string; priority: "low" | "medium" | "high" }) {
-    if (!user) return
-    try {
-      if (!isOnline) {
-        const offlineTask = await createTaskOffline({
-          ...data,
-          due_date: new Date(data.due_date).toISOString(),
-          labels: []
-        }, user.id)
-        fetchPodData()
-        toast.success("Task saved offline")
-        return
-      }
-
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, due_date: new Date(data.due_date).toISOString(), assigned_to: data.assigned_to || null }),
-      })
-      if (res.ok) {
-        const task = await res.json()
-        await db.tasks.put({ ...task, synced_at: Date.now(), is_dirty: false })
-        fetchPodData()
-        toast.success("Task created successfully!")
-      }
-    } catch (error) {
-      console.error('Task creation error:', error)
-      toast.error("Failed to create task")
+  async function handleUpdateProject(id: string, name: string, description: string) {
+    if (!isOnline) {
+      await updateProjectOffline(id, { name, description })
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, name, description } : p))
+      toast.success("Project updated offline")
+      return
     }
+    const res = await fetch(`/api/projects/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, description }) })
+    if (res.ok) { fetchPodData(); toast.success("Project updated") }
+  }
+
+  async function handleCreateTask(data: any) {
+    if (!user) return
+    if (!isOnline) {
+      await createTaskOffline({ ...data, due_date: new Date(data.due_date).toISOString(), labels: [] }, user.id)
+      fetchPodData(); toast.success("Task saved offline")
+      return
+    }
+    const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, due_date: new Date(data.due_date).toISOString() }) })
+    if (res.ok) { fetchPodData(); toast.success("Task created") }
+  }
+
+  async function handleUpdateTask(id: string, data: any) {
+    if (!isOnline) {
+      await updateTaskOffline(id, data)
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, ...data } : t))
+      toast.success("Task updated offline")
+      return
+    }
+    const res = await fetch(`/api/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+    if (res.ok) { fetchPodData(); toast.success("Task updated") }
   }
 
   async function handleUpdateTaskStatus(taskId: string, status: string) {
@@ -461,69 +338,25 @@ export function DashboardContent() {
 
   async function handleSendChat() {
     if (!chatMessage.trim() || !selectedPod || !user) return
-    try {
-      const tempMessage = chatMessage
-      setChatMessage("")
-
-      if (!isOnline) {
-        const offlineMessage = await sendChatOffline(selectedPod.id, tempMessage, user.id)
-        setChatMessages(prev => [...prev, { ...offlineMessage, profiles: user } as ChatMessageWithProfile])
-        toast.success("Message saved offline")
-        return
-      }
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pod_id: selectedPod.id, content: tempMessage })
-      })
-      if (res.ok) {
-        const message = await res.json()
-        await db.chatMessages.put({ ...message, synced_at: Date.now(), is_dirty: false })
-        setChatMessages(prev => [...prev, message])
-      }
-    } catch (error) {
-      console.error('Chat error:', error)
-      toast.error("Failed to send message")
+    const tempMessage = chatMessage
+    setChatMessage("")
+    if (!isOnline) {
+      const offlineMessage = await sendChatOffline(selectedPod.id, tempMessage, user.id)
+      setChatMessages(prev => [...prev, { ...offlineMessage, profiles: user } as ChatMessageWithProfile])
+      return
     }
-  }
-
-  async function handleAddComment() {
-    if (!newComment.trim() || !selectedTask || !user) return
-    setSubmitting(true)
-    try {
-      if (!isOnline) {
-        const offlineComment = await addCommentOffline(selectedTask.id, newComment, user)
-        setTaskComments(prev => [...prev, offlineComment as TaskCommentWithProfile])
-        setNewComment("")
-        toast.success("Comment saved offline")
-        return
-      }
-      const res = await fetch(`/api/tasks/${selectedTask.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: newComment }) })
-      if (res.ok) {
-        const comment = await res.json()
-        setTaskComments(prev => [...prev, comment])
-        setNewComment("")
-      }
-    } finally {
-      setSubmitting(false)
-    }
+    const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pod_id: selectedPod.id, content: tempMessage }) })
+    if (res.ok) { const message = await res.json(); setChatMessages(prev => [...prev, message]) }
   }
 
   async function handleDeleteTask(taskId: string) {
     if (!isOnline) {
       await deleteTaskOffline(taskId)
       setTasks(prev => prev.filter(t => t.id !== taskId))
-      toast.success("Task deleted offline")
       return
     }
     const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" })
-    if (res.ok) {
-      setTasks(prev => prev.filter(t => t.id !== taskId))
-      toast.success("Task deleted")
-    } else {
-      toast.error("Failed to delete task")
-    }
+    if (res.ok) { setTasks(prev => prev.filter(t => t.id !== taskId)); toast.success("Task deleted") }
   }
 
   async function handleDeleteProject(projectId: string) {
@@ -531,17 +364,10 @@ export function DashboardContent() {
       await deleteProjectOffline(projectId)
       setProjects(prev => prev.filter(p => p.id !== projectId))
       setTasks(prev => prev.filter(t => t.project_id !== projectId))
-      toast.success("Project deleted offline")
       return
     }
     const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
-    if (res.ok) {
-      setProjects(prev => prev.filter(p => p.id !== projectId))
-      setTasks(prev => prev.filter(t => t.project_id !== projectId))
-      toast.success("Project deleted")
-    } else {
-      toast.error("Failed to delete project")
-    }
+    if (res.ok) { setProjects(prev => prev.filter(p => p.id !== projectId)); fetchPodData(); toast.success("Project deleted") }
   }
 
   async function handleFilePreview(file: PodFileWithProfile) {
@@ -550,7 +376,7 @@ export function DashboardContent() {
       const { url } = await res.json()
       setPreviewFile({ name: file.name, url, mime_type: file.mime_type })
       setPreviewOpen(true)
-    } else toast.error("Failed to load file preview")
+    }
   }
 
   async function handleFileDownload(file: PodFileWithProfile) {
@@ -558,42 +384,17 @@ export function DashboardContent() {
       const res = await fetch(`/api/files/${file.id}`)
       if (res.ok) {
         const { url } = await res.json()
-        // Use fetch to get the blob to avoid cross-origin issues with link.download
         const response = await fetch(url)
         const blob = await response.blob()
         const blobUrl = window.URL.createObjectURL(blob)
-        const link = document.createElement("a")
-        link.href = blobUrl
-        link.download = file.name
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(blobUrl)
-      } else {
-        toast.error("Failed to get download link")
+        const link = document.createElement("a"); link.href = blobUrl; link.download = file.name; link.click(); window.URL.revokeObjectURL(blobUrl)
       }
-    } catch (error) {
-      console.error("Download error:", error)
-      toast.error("Failed to download file")
-    }
+    } catch (error) { console.error("Download error:", error) }
   }
 
-  async function handleExport(format: "json" | "csv") {
-    if (!selectedPod) return
-    const res = await fetch(`/api/export?pod_id=${selectedPod.id}&format=${format}`)
-    if (res.ok) {
-      if (format === "csv") {
-        const blob = await res.blob()
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a"); a.href = url; a.download = `${selectedPod.title}-tasks.csv`; a.click(); URL.revokeObjectURL(url)
-      } else {
-        const data = await res.json()
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a"); a.href = url; a.download = `${selectedPod.title}-export.json`; a.click(); URL.revokeObjectURL(url)
-      }
-      toast.success(`Exported as ${format.toUpperCase()}`)
-    }
+  async function handleFileDelete(fileId: string) {
+    const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" })
+    if (res.ok) { setPodFiles(prev => prev.filter(f => f.id !== fileId)); fetchPodData(); toast.success("File deleted") }
   }
 
   function handlePodAvatarChange(url: string) {
@@ -604,34 +405,57 @@ export function DashboardContent() {
     }
   }
 
-  const filteredTasks = tasks.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         t.description.toLowerCase().includes(searchQuery.toLowerCase())
+  async function handleCreateInvite() {
+    if (!selectedPod) return
+    setSubmitting(true)
+    const res = await fetch(`/api/pods/${selectedPod.id}/invite`, { method: "POST" })
+    if (res.ok) {
+      const { code } = await res.json()
+      setInviteLink(`${window.location.origin}/join/${code}`)
+    }
+    setSubmitting(false)
+  }
+
+  function copyInviteLink() {
+    navigator.clipboard.writeText(inviteLink)
+    setInviteCopied(true)
+    setTimeout(() => setInviteCopied(false), 2000)
+    toast.success("Invite link copied")
+  }
+
+  async function handleRemoveMember(memberId: string) {
+    if (!selectedPod) return
+    const res = await fetch(`/api/pods/${selectedPod.id}/members?id=${memberId}`, { method: "DELETE" })
+    if (res.ok) { setMembers(prev => prev.filter(m => m.id !== memberId)); toast.success("Member removed") }
+  }
+
+  async function handleMarkNotificationRead(id: string) {
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notification_id: id }) })
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mark_all: true }) })
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+  }
+
+  function openTaskDetail(task: TaskWithAssignee) {
+    setSelectedTask(task)
+    setTaskDetailOpen(true)
+  }
+
+  const isFounder = selectedPod?.role === "founder"
+
+  const filteredTasksToDisplay = tasks.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
     const matchesPriority = filterPriority === "all" || t.priority === filterPriority
     const matchesStatus = filterStatus === "all" || t.status === filterStatus
-    
-    // Member Dashboard auto-filters to their assigned tasks only
     const isVisibleToUser = isFounder || t.assigned_to === user?.id || t.created_by === user?.id
-    
     return matchesSearch && matchesPriority && matchesStatus && isVisibleToUser
   })
 
-  const filteredProjects = projects.filter(p => {
-    // Members can view the project if they have any assigned task in it
-    const hasAssignedTask = tasks.some(t => t.project_id === p.id && (t.assigned_to === user?.id || t.created_by === user?.id))
-    const isVisibleToUser = isFounder || hasAssignedTask
-    return isVisibleToUser && p.name.toLowerCase().includes(searchQuery.toLowerCase())
-  })
-
   if (showSplash) return <SplashScreen onComplete={() => setShowSplash(false)} />
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    )
-  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
 
   return (
     <ErrorBoundary>
@@ -667,72 +491,44 @@ export function DashboardContent() {
                       <AvatarFallback className="bg-primary/10 text-primary">{selectedPod.title.substring(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div>
-                        <div className="flex items-center gap-3">
-                          <h1 className="text-xl md:text-2xl font-bold tracking-tight">{selectedPod.title}</h1>
-                          <Badge variant="outline" className="hidden sm:inline-flex font-mono">{selectedPod.npn}</Badge>
+                      <div className="flex items-center gap-3">
+                        <h1 className="text-xl md:text-2xl font-bold tracking-tight">{selectedPod.title}</h1>
+                        <Badge variant="outline" className="hidden sm:inline-flex font-mono">{selectedPod.npn}</Badge>
+                      </div>
+                      {selectedPod.summary && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-sm font-medium text-primary/80">Pod Summary</p>
+                          <p className="text-muted-foreground text-sm line-clamp-2 bg-muted/30 p-2 rounded-md border border-border/50">
+                            {selectedPod.summary}
+                          </p>
                         </div>
-                        {selectedPod.summary && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-sm font-medium text-primary/80">Pod Summary</p>
-                            <p className="text-muted-foreground text-sm line-clamp-2 bg-muted/30 p-2 rounded-md border border-border/50">
-                              {selectedPod.summary}
-                            </p>
-                          </div>
-                        )}
-
+                      )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="hidden md:block">
-                      <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncPendingChanges} />
-                    </div>
+                    <div className="hidden md:block"><OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncPendingChanges} /></div>
+                    <div className="relative flex-1 md:flex-none"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-full md:w-40" /></div>
                     
-                    <div className="relative flex-1 md:flex-none">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-full md:w-40" />
-                    </div>
-
                     <Select value={filterPriority} onValueChange={setFilterPriority}>
-                      <SelectTrigger className="w-24 md:w-28"><Filter className="w-3 h-3 mr-1 hidden md:inline" /><SelectValue placeholder="Priority" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
+                      <SelectTrigger className="w-24 md:w-28"><SelectValue placeholder="Priority" /></SelectTrigger>
+                      <SelectContent><SelectItem value="all">All</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent>
                     </Select>
 
                     <Select value={filterStatus} onValueChange={setFilterStatus}>
                       <SelectTrigger className="w-24 md:w-28"><SelectValue placeholder="Status" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="not_started">Not Started</SelectItem>
-                        <SelectItem value="ongoing">Ongoing</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
+                      <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="not_started">Not Started</SelectItem><SelectItem value="ongoing">Ongoing</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent>
                     </Select>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="outline" size="icon"><Download className="w-4 h-4" /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleExport("json")}>Export JSON</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport("csv")}>Export CSV</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
 
                     {isFounder && (
                       <>
                         <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-                          <DialogTrigger asChild><Button variant="outline" className="flex"><Users className="w-4 h-4 mr-2" />Invite</Button></DialogTrigger>
+                          <DialogTrigger asChild><Button variant="outline"><Users className="w-4 h-4 mr-2" />Invite</Button></DialogTrigger>
                           <DialogContent>
                             <DialogHeader><DialogTitle>Invite Team Members</DialogTitle><DialogDescription>Share this link to invite people</DialogDescription></DialogHeader>
                             <div className="space-y-4 py-4">
                               {inviteLink ? (
-                                <div className="flex gap-2">
-                                  <Input value={inviteLink} readOnly />
-                                  <Button onClick={copyInviteLink} variant="secondary">{inviteCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</Button>
-                                </div>
+                                <div className="flex gap-2"><Input value={inviteLink} readOnly /><Button onClick={copyInviteLink} variant="secondary">{inviteCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</Button></div>
                               ) : (
                                 <Button onClick={handleCreateInvite} disabled={submitting} className="w-full">{submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LinkIcon className="w-4 h-4 mr-2" />}Generate Invite Link</Button>
                               )}
@@ -741,34 +537,35 @@ export function DashboardContent() {
                         </Dialog>
 
                         <Dialog open={podSettingsOpen} onOpenChange={setPodSettingsOpen}>
-                            <DialogTrigger asChild><Button variant="outline" size="icon"><ImageIcon className="w-4 h-4" /></Button></DialogTrigger>
-                            <DialogContent className="max-w-lg">
-                              <DialogHeader><DialogTitle>Pod Settings</DialogTitle><DialogDescription>Customize your pod and manage subscription</DialogDescription></DialogHeader>
-                              <Tabs defaultValue="appearance" className="w-full">
-                                <TabsList className="grid w-full grid-cols-2">
-                                  <TabsTrigger value="appearance">Appearance</TabsTrigger>
-                                  <TabsTrigger value="subscription">Subscription</TabsTrigger>
-                                </TabsList>
-                                <TabsContent value="appearance" className="py-4 space-y-6">
-                                  <PodAvatarUpload podId={selectedPod.id} currentAvatar={selectedPod.avatar_url} podTitle={selectedPod.title} onAvatarChange={handlePodAvatarChange} />
-                                </TabsContent>
-                                <TabsContent value="subscription" className="py-4">
-                                  <PodSubscriptionManager 
-                                    pod={selectedPod} 
-                                    isFounder={isFounder} 
-                                    memberCount={members.length} 
-                                    storageUsedBytes={selectedPod.storage_used_bytes || 0} 
-                                  />
-                                </TabsContent>
-                              </Tabs>
-                            </DialogContent>
-                          </Dialog>
+                          <DialogTrigger asChild><Button variant="outline" size="icon"><Settings className="w-4 h-4" /></Button></DialogTrigger>
+                          <DialogContent className="max-w-lg">
+                            <DialogHeader><DialogTitle>Pod Settings</DialogTitle><DialogDescription>Manage your pod details and subscription</DialogDescription></DialogHeader>
+                            <Tabs defaultValue="general" className="w-full">
+                              <TabsList className="grid w-full grid-cols-3">
+                                <TabsTrigger value="general">General</TabsTrigger>
+                                <TabsTrigger value="appearance">Appearance</TabsTrigger>
+                                <TabsTrigger value="subscription">Subscription</TabsTrigger>
+                              </TabsList>
+                              <TabsContent value="general" className="py-4 space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Pod Title</Label>
+                                  <Input value={editPodTitle} onChange={(e) => setEditPodTitle(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label>Pod Summary</Label>
+                                  <Textarea value={editPodSummary} onChange={(e) => setEditPodSummary(e.target.value)} rows={3} />
+                                </div>
+                                <Button onClick={handleUpdatePod} disabled={submitting || !editPodTitle.trim()} className="w-full">{submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : "Save Changes"}</Button>
+                              </TabsContent>
+                              <TabsContent value="appearance" className="py-4"><PodAvatarUpload podId={selectedPod.id} currentAvatar={selectedPod.avatar_url} podTitle={selectedPod.title} onAvatarChange={handlePodAvatarChange} /></TabsContent>
+                              <TabsContent value="subscription" className="py-4"><PodSubscriptionManager pod={selectedPod} isFounder={isFounder} memberCount={members.length} storageUsedBytes={selectedPod.storage_used_bytes || 0} /></TabsContent>
+                            </Tabs>
+                          </DialogContent>
+                        </Dialog>
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button size="icon" variant="ghost"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={handleDeletePod} className="text-destructive focus:text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete Pod</DropdownMenuItem>
-                          </DropdownMenuContent>
+                          <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setDeletePodDialogOpen(true)} className="text-destructive focus:text-destructive"><Trash2 className="w-4 h-4 mr-2" />Delete Pod</DropdownMenuItem></DropdownMenuContent>
                         </DropdownMenu>
                       </>
                     )}
@@ -777,18 +574,18 @@ export function DashboardContent() {
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
                   <TabsList className="w-full md:w-auto overflow-x-auto">
-                    <TabsTrigger value="overview" className="flex-1 md:flex-none"><BarChart3 className="w-4 h-4 mr-2 hidden sm:inline" />Overview</TabsTrigger>
-                    <TabsTrigger value="projects" className="flex-1 md:flex-none"><FolderKanban className="w-4 h-4 mr-2 hidden sm:inline" />Projects</TabsTrigger>
-                    <TabsTrigger value="members" className="flex-1 md:flex-none"><Users className="w-4 h-4 mr-2 hidden sm:inline" />Team</TabsTrigger>
-                    <TabsTrigger value="files" className="flex-1 md:flex-none"><HardDrive className="w-4 h-4 mr-2 hidden sm:inline" />Files</TabsTrigger>
-                    <TabsTrigger value="chat" className="flex-1 md:flex-none"><MessageSquare className="w-4 h-4 mr-2 hidden sm:inline" />Chat</TabsTrigger>
+                    <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="projects">Projects</TabsTrigger>
+                    <TabsTrigger value="members">Team</TabsTrigger>
+                    <TabsTrigger value="files">Files</TabsTrigger>
+                    <TabsTrigger value="chat">Chat</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="overview"><OverviewTab tasks={tasks} activityLogs={activityLogs} user={user} onTaskClick={openTaskDetail} /></TabsContent>
                   <TabsContent value="projects">
                     <ProjectsTab 
                       projects={projects} 
-                      tasks={tasks} 
+                      tasks={filteredTasksToDisplay} 
                       members={members} 
                       isFounder={isFounder} 
                       searchQuery={searchQuery} 
@@ -796,8 +593,10 @@ export function DashboardContent() {
                       filterStatus={filterStatus} 
                       onTaskClick={openTaskDetail} 
                       onUpdateTaskStatus={handleUpdateTaskStatus} 
-                      onCreateProject={handleCreateProject} 
+                      onCreateProject={handleCreateProject}
+                      onUpdateProject={handleUpdateProject} 
                       onCreateTask={handleCreateTask}
+                      onUpdateTask={handleUpdateTask}
                       onDeleteTask={handleDeleteTask}
                       onDeleteProject={handleDeleteProject}
                       user={user}
@@ -813,10 +612,7 @@ export function DashboardContent() {
                     {selectedTask && (
                       <>
                         <DialogHeader>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-3 h-3 rounded-full ${statusColors[selectedTask.status]}`} />
-                            <DialogTitle>{selectedTask.name}</DialogTitle>
-                          </div>
+                          <div className="flex items-center gap-3"><div className={`w-3 h-3 rounded-full ${statusColors[selectedTask.status]}`} /><DialogTitle>{selectedTask.name}</DialogTitle></div>
                           <DialogDescription>{selectedTask.projects?.name}</DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4">
@@ -827,19 +623,13 @@ export function DashboardContent() {
                               <h4 className="text-sm font-medium mb-1">Status</h4>
                               <Select value={selectedTask.status} onValueChange={(val) => { handleUpdateTaskStatus(selectedTask.id, val); setSelectedTask({ ...selectedTask, status: val as Task["status"] }) }} disabled={!isFounder && selectedTask.assigned_to !== user?.id}>
                                 <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="not_started">Not Started</SelectItem>
-                                  <SelectItem value="ongoing">Ongoing</SelectItem>
-                                  <SelectItem value="completed">Completed</SelectItem>
-                                </SelectContent>
+                                <SelectContent><SelectItem value="not_started">Not Started</SelectItem><SelectItem value="ongoing">Ongoing</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent>
                               </Select>
                             </div>
                             <div><h4 className="text-sm font-medium mb-1">Assignee</h4><p className="text-sm text-muted-foreground">{selectedTask.profiles?.display_name || selectedTask.profiles?.email || "Unassigned"}</p></div>
                           </div>
                           <Separator />
-                          {selectedPod && user && (
-                            <TaskComments taskId={selectedTask.id} podId={selectedPod.id} user={user} />
-                          )}
+                          {selectedPod && user && <TaskComments taskId={selectedTask.id} podId={selectedPod.id} user={user} />}
                         </div>
                       </>
                     )}
@@ -858,12 +648,7 @@ export function DashboardContent() {
         </main>
       </div>
       <FilePreview open={previewOpen} onOpenChange={setPreviewOpen} file={previewFile} />
-      <DeletePodDialog 
-        isOpen={deletePodDialogOpen}
-        onOpenChange={setDeletePodDialogOpen}
-        pod={selectedPod}
-        onDeleteSuccess={handleDeletePodSuccess}
-      />
+      <DeletePodDialog isOpen={deletePodDialogOpen} onOpenChange={setDeletePodDialogOpen} pod={selectedPod} onDeleteSuccess={() => { setSelectedPod(null); fetchPods() }} />
     </ErrorBoundary>
   )
 }
