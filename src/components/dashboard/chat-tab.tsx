@@ -43,24 +43,28 @@ export function ChatTab({
         <CardContent className="flex-1 flex flex-col min-h-0">
           <ScrollArea className="flex-1 pr-4">
             <div className="space-y-4">
-              {chatMessages.map((msg) => (
-                <div key={msg.id} className={`flex gap-3 ${msg.user_id === user?.id ? "flex-row-reverse" : ""}`}>
-                  <Avatar className="h-8 w-8 flex-shrink-0">
-                    <AvatarImage src={msg.profiles?.avatar_url || undefined} />
-                    <AvatarFallback className="text-xs">
-                      {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className={`max-w-[70%] ${msg.user_id === user?.id ? "text-right" : ""}`}>
-                    <div className={`rounded-lg px-3 py-2 ${msg.user_id === user?.id ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                      <p className="text-sm">{msg.content}</p>
+                {chatMessages.map((msg) => {
+                  const isOwnMessage = msg.user_id === user?.id
+                  return (
+                    <div key={msg.id} className={`flex gap-3 ${isOwnMessage ? "flex-row-reverse" : ""}`}>
+                      <Avatar className="h-8 w-8 flex-shrink-0">
+                        <AvatarImage src={msg.profiles?.avatar_url || undefined} />
+                        <AvatarFallback className="text-xs">
+                          {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className={`max-w-[70%] ${isOwnMessage ? "text-right" : ""}`}>
+                        <div className={`rounded-lg px-3 py-2 ${isOwnMessage ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                          <p className="text-sm">{msg.content}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {msg.profiles?.display_name} · {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {msg.profiles?.display_name} · {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                  )
+                })}
+
               <div ref={chatEndRef} />
             </div>
           </ScrollArea>

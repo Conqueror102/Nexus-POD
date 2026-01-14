@@ -72,9 +72,21 @@ export interface OfflineMember {
   synced_at: number
 }
 
+export interface OfflineTaskReminder {
+  id: string
+  task_id: string
+  reminder_time: string
+  hours_before: number
+  sent: boolean
+  created_at: string
+  synced_at: number
+  is_dirty?: boolean
+  local_id?: string
+}
+
 export interface PendingSync {
   id?: number
-  type: 'task_create' | 'task_update' | 'chat_create' | 'comment_create'
+  type: 'task_create' | 'task_update' | 'task_delete' | 'chat_create' | 'comment_create' | 'project_create' | 'project_update' | 'project_delete' | 'pod_create' | 'pod_update'
   entity_id: string
   data: Record<string, unknown>
   created_at: number
@@ -102,54 +114,6 @@ const db = new Dexie('NexusPodOffline') as Dexie & {
   tasks: EntityTable<OfflineTask, 'id'>
   chatMessages: EntityTable<OfflineChatMessage, 'id'>
   comments: EntityTable<OfflineTaskComment, 'id'>
-  members: EntityTable<OfflineMember, 'id'>
-  pendingSync: EntityTable<PendingSync, 'id'>
-  syncMeta: EntityTable<SyncMeta, 'key'>
-  cachedUser: EntityTable<CachedUser, 'id'>
-}
-
-export interface OfflineTaskReminder {
-  id: string
-  task_id: string
-  reminder_time: string
-  hours_before: number
-  sent: boolean
-  created_at: string
-  synced_at: number
-  is_dirty?: boolean
-  local_id?: string
-}
-
-db.version(2).stores({
-  pods: 'id, npn, founder_id',
-  projects: 'id, pod_id',
-  tasks: 'id, project_id, assigned_to, status, is_dirty',
-  chatMessages: 'id, pod_id, created_at, is_dirty',
-  comments: 'id, task_id, created_at, is_dirty',
-  members: 'id, pod_id, user_id',
-  pendingSync: '++id, type, entity_id, created_at',
-  syncMeta: 'key',
-  cachedUser: 'id',
-})
-
-export interface OfflineTaskReminder {
-  id: string
-  task_id: string
-  reminder_time: string
-  hours_before: number
-  sent: boolean
-  created_at: string
-  synced_at: number
-  is_dirty?: boolean
-  local_id?: string
-}
-
-const db = new Dexie('NexusPodOffline') as Dexie & {
-  pods: EntityTable<OfflinePod, 'id'>
-  projects: EntityTable<OfflineProject, 'id'>
-  tasks: EntityTable<OfflineTask, 'id'>
-  chatMessages: EntityTable<OfflineChatMessage, 'id'>
-  comments: EntityTable<OfflineTaskComment, 'id'>
   reminders: EntityTable<OfflineTaskReminder, 'id'>
   members: EntityTable<OfflineMember, 'id'>
   pendingSync: EntityTable<PendingSync, 'id'>
@@ -157,7 +121,7 @@ const db = new Dexie('NexusPodOffline') as Dexie & {
   cachedUser: EntityTable<CachedUser, 'id'>
 }
 
-db.version(3).stores({
+db.version(4).stores({
   pods: 'id, npn, founder_id',
   projects: 'id, pod_id',
   tasks: 'id, project_id, assigned_to, status, is_dirty',

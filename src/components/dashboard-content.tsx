@@ -26,7 +26,7 @@ import { ErrorBoundary } from "@/components/error-boundary"
 import { FilePreview } from "@/components/file-preview"
 import { OfflineIndicator } from "@/components/offline-indicator"
 import { PodAvatarUpload } from "@/components/pod-avatar-upload"
-import { PodAvatarUpload } from "@/components/pod-avatar-upload"
+import { PodSubscriptionManager } from "@/components/pod-subscription-manager"
 import { useOfflineSync } from "@/hooks/use-offline-sync"
 import { useReminders } from "@/hooks/use-reminders"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -40,7 +40,12 @@ import { DeletePodDialog } from "@/components/delete-pod-dialog"
 export function DashboardContent() {
   const { user, signOut } = useAuth()
   const supabase = createClient()
-  const { isOnline, isSyncing, pendingCount, syncPendingChanges, cachePodData } = useOfflineSync()
+  const { 
+    isOnline, isSyncing, pendingCount, syncPendingChanges, cachePodData,
+    createTaskOffline, updateTaskOffline, deleteTaskOffline,
+    createProjectOffline, updateProjectOffline, deleteProjectOffline,
+    sendChatOffline, addCommentOffline
+  } = useOfflineSync()
   
   const [pods, setPods] = useState<PodWithRole[]>([])
   const [selectedPod, setSelectedPod] = useState<PodWithRole | null>(null)
@@ -386,27 +391,12 @@ export function DashboardContent() {
   }
 
   async function handleCreateProject(name: string, description: string) {
-    if (!selectedPod) return
+    if (!selectedPod || !user) return
     try {
-      if (!navigator.onLine) {
-        const offlineProject = {
-          id: `local_${Date.now()}`,
-          pod_id: selectedPod.id,
-          name,
-          description: description || null,
-          created_by: user?.id || '',
-          synced_at: 0,
-        }
-        await db.projects.add(offlineProject)
-        await db.pendingSync.add({
-          type: 'task_create',
-          entity_id: offlineProject.id,
-          data: { pod_id: selectedPod.id, name, description, type: 'project' },
-          created_at: Date.now(),
-          retries: 0,
-        })
-        setProjects(prev => [offlineProject, ...prev])
-        toast.success("Project saved offline. It will sync when you're back online.")
+      if (!isOnline) {
+        const offlineProject = await createProjectOffline({ pod_id: selectedPod.id, name, description }, user.id)
+        setProjects(prev => [offlineProject as Project, ...prev])
+        toast.success("Project saved offline")
         return
       }
 
@@ -423,50 +413,21 @@ export function DashboardContent() {
       }
     } catch (error) {
       console.error('Project creation error:', error)
-      if (!navigator.onLine) {
-        const offlineProject = {
-          id: `local_${Date.now()}`,
-          pod_id: selectedPod.id,
-          name,
-          description: description || null,
-          created_by: user?.id || '',
-          synced_at: 0,
-        }
-        await db.projects.add(offlineProject)
-        setProjects(prev => [offlineProject, ...prev])
-        toast.success("Project saved offline. It will sync when you're back online.")
-      } else {
-        toast.error("Failed to create project")
-      }
+      toast.error("Failed to create project")
     }
   }
 
   async function handleCreateTask(data: { project_id: string; name: string; description: string; due_date: string; assigned_to: string; priority: "low" | "medium" | "high" }) {
+    if (!user) return
     try {
-      if (!navigator.onLine) {
-        const offlineTask = {
-          id: `local_${Date.now()}`,
-          project_id: data.project_id,
-          name: data.name,
-          description: data.description,
+      if (!isOnline) {
+        const offlineTask = await createTaskOffline({
+          ...data,
           due_date: new Date(data.due_date).toISOString(),
-          assigned_to: data.assigned_to || null,
-          status: 'not_started' as const,
-          priority: data.priority,
-          created_by: user?.id || '',
-          synced_at: 0,
-          is_dirty: true,
-        }
-        await db.tasks.add(offlineTask)
-        await db.pendingSync.add({
-          type: 'task_create',
-          entity_id: offlineTask.id,
-          data: { ...data, due_date: new Date(data.due_date).toISOString(), assigned_to: data.assigned_to || null, type: 'task' },
-          created_at: Date.now(),
-          retries: 0,
-        })
+          labels: []
+        }, user.id)
         fetchPodData()
-        toast.success("Task saved offline. It will sync when you're back online.")
+        toast.success("Task saved offline")
         return
       }
 
@@ -483,79 +444,31 @@ export function DashboardContent() {
       }
     } catch (error) {
       console.error('Task creation error:', error)
-      if (!navigator.onLine) {
-        const offlineTask = {
-          id: `local_${Date.now()}`,
-          project_id: data.project_id,
-          name: data.name,
-          description: data.description,
-          due_date: new Date(data.due_date).toISOString(),
-          assigned_to: data.assigned_to || null,
-          status: 'not_started' as const,
-          priority: data.priority,
-          created_by: user?.id || '',
-          synced_at: 0,
-          is_dirty: true,
-        }
-        await db.tasks.add(offlineTask)
-        fetchPodData()
-        toast.success("Task saved offline. It will sync when you're back online.")
-      } else {
-        toast.error("Failed to create task")
-      }
+      toast.error("Failed to create task")
     }
-  }
-
-  async function handleCreateInvite() {
-    if (!selectedPod) return
-    setSubmitting(true)
-    const res = await fetch(`/api/pods/${selectedPod.id}/invite`, { method: "POST" })
-    if (res.ok) {
-      const invite = await res.json()
-      setInviteLink(`${window.location.origin}/join/${invite.invite_code}`)
-    }
-    setSubmitting(false)
-  }
-
-  async function copyInviteLink() {
-    await navigator.clipboard.writeText(inviteLink)
-    setInviteCopied(true)
-    toast.success("Invite link copied!")
-    setTimeout(() => setInviteCopied(false), 2000)
   }
 
   async function handleUpdateTaskStatus(taskId: string, status: string) {
+    if (!isOnline) {
+      await updateTaskOffline(taskId, { status: status as any })
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
+      toast.success("Status updated offline")
+      return
+    }
     await fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) })
     fetchPodData()
   }
 
   async function handleSendChat() {
-    if (!chatMessage.trim() || !selectedPod) return
+    if (!chatMessage.trim() || !selectedPod || !user) return
     try {
       const tempMessage = chatMessage
       setChatMessage("")
 
-      if (!navigator.onLine) {
-        const offlineMessage = {
-          id: `local_${Date.now()}`,
-          pod_id: selectedPod.id,
-          user_id: user?.id || '',
-          content: tempMessage,
-          created_at: new Date().toISOString(),
-          synced_at: 0,
-          is_dirty: true,
-        }
-        await db.chatMessages.add(offlineMessage)
-        await db.pendingSync.add({
-          type: 'chat_create',
-          entity_id: offlineMessage.id,
-          data: { pod_id: selectedPod.id, content: tempMessage },
-          created_at: Date.now(),
-          retries: 0,
-        })
-        // Add to local chat display
-        setChatMessages(prev => [...prev, offlineMessage])
-        toast.success("Message saved offline. It will send when you're back online.")
+      if (!isOnline) {
+        const offlineMessage = await sendChatOffline(selectedPod.id, tempMessage, user.id)
+        setChatMessages(prev => [...prev, { ...offlineMessage, profiles: user } as ChatMessageWithProfile])
+        toast.success("Message saved offline")
         return
       }
 
@@ -571,72 +484,37 @@ export function DashboardContent() {
       }
     } catch (error) {
       console.error('Chat error:', error)
-      if (!navigator.onLine) {
-        // Restore message and mark for retry
-        setChatMessage(chatMessage)
-        toast.success("Message saved offline. It will send when you're back online.")
-      } else {
-        toast.error("Failed to send message")
-      }
+      toast.error("Failed to send message")
     }
-  }
-
-  async function openTaskDetail(task: TaskWithAssignee) {
-    setSelectedTask(task)
-    setTaskDetailOpen(true)
-    const res = await fetch(`/api/tasks/${task.id}/comments`)
-    if (res.ok) setTaskComments(await res.json())
   }
 
   async function handleAddComment() {
-    if (!newComment.trim() || !selectedTask) return
+    if (!newComment.trim() || !selectedTask || !user) return
     setSubmitting(true)
-    const res = await fetch(`/api/tasks/${selectedTask.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: newComment }) })
-    if (res.ok) {
-      const comment = await res.json()
-      setTaskComments(prev => [...prev, comment])
-      setNewComment("")
+    try {
+      if (!isOnline) {
+        const offlineComment = await addCommentOffline(selectedTask.id, newComment, user)
+        setTaskComments(prev => [...prev, offlineComment as TaskCommentWithProfile])
+        setNewComment("")
+        toast.success("Comment saved offline")
+        return
+      }
+      const res = await fetch(`/api/tasks/${selectedTask.id}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: newComment }) })
+      if (res.ok) {
+        const comment = await res.json()
+        setTaskComments(prev => [...prev, comment])
+        setNewComment("")
+      }
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
-  }
-
-  async function handleRemoveMember(userId: string) {
-    if (!selectedPod) return
-    await fetch(`/api/pods/${selectedPod.id}/members`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) })
-    fetchPodData()
-    toast.success("Member removed")
-  }
-
-  async function handleDeletePod() {
-    setDeletePodDialogOpen(true)
-  }
-
-  function handleDeletePodSuccess() {
-    if (selectedPod) {
-      setPods(prev => prev.filter(p => p.id !== selectedPod.id))
-      setSelectedPod(pods.find(p => p.id !== selectedPod.id) || null)
-    }
-  }
-
-  async function handleMarkAllNotificationsRead() {
-    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mark_all_read: true }) })
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-  }
-
-  async function handleMarkNotificationRead(id: string) {
-    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notification_id: id }) })
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
-  }
-
-  async function handleFileDelete(fileId: string) {
-    const res = await fetch(`/api/files/${fileId}`, { method: "DELETE" })
-    if (res.ok) { toast.success("File deleted"); fetchPodData() }
-    else toast.error("Failed to delete file")
   }
 
   async function handleDeleteTask(taskId: string) {
-    if (!navigator.onLine) {
-      toast.error("Offline deletion not supported yet")
+    if (!isOnline) {
+      await deleteTaskOffline(taskId)
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+      toast.success("Task deleted offline")
       return
     }
     const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" })
@@ -649,8 +527,11 @@ export function DashboardContent() {
   }
 
   async function handleDeleteProject(projectId: string) {
-    if (!navigator.onLine) {
-      toast.error("Offline deletion not supported yet")
+    if (!isOnline) {
+      await deleteProjectOffline(projectId)
+      setProjects(prev => prev.filter(p => p.id !== projectId))
+      setTasks(prev => prev.filter(t => t.project_id !== projectId))
+      toast.success("Project deleted offline")
       return
     }
     const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
@@ -673,12 +554,27 @@ export function DashboardContent() {
   }
 
   async function handleFileDownload(file: PodFileWithProfile) {
-    const res = await fetch(`/api/files/${file.id}`)
-    if (res.ok) {
-      const { url } = await res.json()
-      const link = document.createElement("a")
-      link.href = url; link.download = file.name; link.target = "_blank"
-      document.body.appendChild(link); link.click(); document.body.removeChild(link)
+    try {
+      const res = await fetch(`/api/files/${file.id}`)
+      if (res.ok) {
+        const { url } = await res.json()
+        // Use fetch to get the blob to avoid cross-origin issues with link.download
+        const response = await fetch(url)
+        const blob = await response.blob()
+        const blobUrl = window.URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = file.name
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(blobUrl)
+      } else {
+        toast.error("Failed to get download link")
+      }
+    } catch (error) {
+      console.error("Download error:", error)
+      toast.error("Failed to download file")
     }
   }
 
@@ -708,7 +604,24 @@ export function DashboardContent() {
     }
   }
 
-  const isFounder = selectedPod?.role === "founder"
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         t.description.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesPriority = filterPriority === "all" || t.priority === filterPriority
+    const matchesStatus = filterStatus === "all" || t.status === filterStatus
+    
+    // Member Dashboard auto-filters to their assigned tasks only
+    const isVisibleToUser = isFounder || t.assigned_to === user?.id || t.created_by === user?.id
+    
+    return matchesSearch && matchesPriority && matchesStatus && isVisibleToUser
+  })
+
+  const filteredProjects = projects.filter(p => {
+    // Members can view the project if they have any assigned task in it
+    const hasAssignedTask = tasks.some(t => t.project_id === p.id && (t.assigned_to === user?.id || t.created_by === user?.id))
+    const isVisibleToUser = isFounder || hasAssignedTask
+    return isVisibleToUser && p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  })
 
   if (showSplash) return <SplashScreen onComplete={() => setShowSplash(false)} />
 
@@ -754,11 +667,19 @@ export function DashboardContent() {
                       <AvatarFallback className="bg-primary/10 text-primary">{selectedPod.title.substring(0, 2).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div>
-                      <div className="flex items-center gap-3">
-                        <h1 className="text-xl md:text-2xl font-semibold">{selectedPod.title}</h1>
-                        <Badge variant="outline" className="hidden sm:inline-flex">{selectedPod.npn}</Badge>
-                      </div>
-                      {selectedPod.summary && <p className="text-muted-foreground text-sm mt-1 line-clamp-1">{selectedPod.summary}</p>}
+                        <div className="flex items-center gap-3">
+                          <h1 className="text-xl md:text-2xl font-bold tracking-tight">{selectedPod.title}</h1>
+                          <Badge variant="outline" className="hidden sm:inline-flex font-mono">{selectedPod.npn}</Badge>
+                        </div>
+                        {selectedPod.summary && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm font-medium text-primary/80">Pod Summary</p>
+                            <p className="text-muted-foreground text-sm line-clamp-2 bg-muted/30 p-2 rounded-md border border-border/50">
+                              {selectedPod.summary}
+                            </p>
+                          </div>
+                        )}
+
                     </div>
                   </div>
 
@@ -820,14 +741,28 @@ export function DashboardContent() {
                         </Dialog>
 
                         <Dialog open={podSettingsOpen} onOpenChange={setPodSettingsOpen}>
-                          <DialogTrigger asChild><Button variant="outline" size="icon"><ImageIcon className="w-4 h-4" /></Button></DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader><DialogTitle>Pod Settings</DialogTitle><DialogDescription>Customize your pod</DialogDescription></DialogHeader>
-                            <div className="py-4 space-y-6">
-                              <PodAvatarUpload podId={selectedPod.id} currentAvatar={selectedPod.avatar_url} podTitle={selectedPod.title} onAvatarChange={handlePodAvatarChange} />
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                            <DialogTrigger asChild><Button variant="outline" size="icon"><ImageIcon className="w-4 h-4" /></Button></DialogTrigger>
+                            <DialogContent className="max-w-lg">
+                              <DialogHeader><DialogTitle>Pod Settings</DialogTitle><DialogDescription>Customize your pod and manage subscription</DialogDescription></DialogHeader>
+                              <Tabs defaultValue="appearance" className="w-full">
+                                <TabsList className="grid w-full grid-cols-2">
+                                  <TabsTrigger value="appearance">Appearance</TabsTrigger>
+                                  <TabsTrigger value="subscription">Subscription</TabsTrigger>
+                                </TabsList>
+                                <TabsContent value="appearance" className="py-4 space-y-6">
+                                  <PodAvatarUpload podId={selectedPod.id} currentAvatar={selectedPod.avatar_url} podTitle={selectedPod.title} onAvatarChange={handlePodAvatarChange} />
+                                </TabsContent>
+                                <TabsContent value="subscription" className="py-4">
+                                  <PodSubscriptionManager 
+                                    pod={selectedPod} 
+                                    isFounder={isFounder} 
+                                    memberCount={members.length} 
+                                    storageUsedBytes={selectedPod.storage_used_bytes || 0} 
+                                  />
+                                </TabsContent>
+                              </Tabs>
+                            </DialogContent>
+                          </Dialog>
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button size="icon" variant="ghost"><MoreVertical className="w-4 h-4" /></Button></DropdownMenuTrigger>

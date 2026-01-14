@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const formData = await request.formData()
   const file = formData.get('file') as File
   const pod_id = formData.get('pod_id') as string
+  const description = formData.get('description') as string | null
 
   if (!file || !pod_id) {
     return NextResponse.json({ error: 'File and pod_id are required' }, { status: 400 })
@@ -61,18 +62,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
   }
 
-  const { data: fileRecord, error: dbError } = await supabase
-    .from('pod_files')
-    .insert({
-      pod_id,
-      uploaded_by: user.id,
-      name: file.name,
-      size_bytes: file.size,
-      mime_type: file.type,
-      storage_path: fileName,
-    })
-    .select()
-    .single()
+    const { data: fileRecord, error: dbError } = await supabase
+      .from('pod_files')
+      .insert({
+        pod_id,
+        uploaded_by: user.id,
+        name: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
+        storage_path: fileName,
+        description: description,
+      })
+      .select()
+      .single()
+
 
   if (dbError) {
     await supabase.storage.from('pod-files').remove([fileName])

@@ -89,6 +89,36 @@ export function useOfflineSync() {
 
   async function syncItem(item: PendingSync) {
     switch (item.type) {
+      case 'project_create': {
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.data),
+        })
+        if (!res.ok) throw new Error('Failed to create project')
+        const project = await res.json()
+        await db.projects.delete(item.entity_id)
+        await db.projects.put({ ...project, synced_at: Date.now() })
+        break
+      }
+      case 'project_update': {
+        const res = await fetch('/api/projects/' + item.entity_id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.data),
+        })
+        if (!res.ok) throw new Error('Failed to update project')
+        await db.projects.update(item.entity_id, { synced_at: Date.now() })
+        break
+      }
+      case 'project_delete': {
+        const res = await fetch('/api/projects/' + item.entity_id, {
+          method: 'DELETE',
+        })
+        if (!res.ok && res.status !== 404) throw new Error('Failed to delete project')
+        await db.projects.delete(item.entity_id)
+        break
+      }
       case 'task_create': {
         const res = await fetch('/api/tasks', {
           method: 'POST',
@@ -109,6 +139,14 @@ export function useOfflineSync() {
         })
         if (!res.ok) throw new Error('Failed to update task')
         await db.tasks.update(item.entity_id, { is_dirty: false, synced_at: Date.now() })
+        break
+      }
+      case 'task_delete': {
+        const res = await fetch('/api/tasks/' + item.entity_id, {
+          method: 'DELETE',
+        })
+        if (!res.ok && res.status !== 404) throw new Error('Failed to delete task')
+        await db.tasks.delete(item.entity_id)
         break
       }
       case 'chat_create': {
@@ -235,6 +273,53 @@ export function useOfflineSync() {
     await setLastSyncTime(podId)
   }, [])
 
+  const createProjectOffline = useCallback(async (data: { pod_id: string; name: string; description: string | null }, createdBy: string) => {
+    const localId = 'local_prj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    const offlineProject = {
+      id: localId,
+      ...data,
+      created_by: createdBy,
+      synced_at: Date.now(),
+    }
+    await db.projects.put(offlineProject)
+    await db.pendingSync.add({
+      type: 'project_create',
+      entity_id: localId,
+      data: data,
+      created_at: Date.now(),
+      retries: 0,
+    })
+    await updatePendingCount()
+    return offlineProject
+  }, [])
+
+  const updateProjectOffline = useCallback(async (projectId: string, updates: { name?: string; description?: string | null }) => {
+    await db.projects.update(projectId, updates)
+    await db.pendingSync.add({
+      type: 'project_update',
+      entity_id: projectId,
+      data: updates,
+      created_at: Date.now(),
+      retries: 0,
+    })
+    await updatePendingCount()
+  }, [])
+
+  const deleteProjectOffline = useCallback(async (projectId: string) => {
+    await db.projects.delete(projectId)
+    // Also delete associated tasks locally
+    await db.tasks.where('project_id').equals(projectId).delete()
+    
+    await db.pendingSync.add({
+      type: 'project_delete',
+      entity_id: projectId,
+      data: {},
+      created_at: Date.now(),
+      retries: 0,
+    })
+    await updatePendingCount()
+  }, [])
+
   const createTaskOffline = useCallback(async (taskData: {
     project_id: string
     name: string
@@ -280,6 +365,18 @@ export function useOfflineSync() {
       retries: 0,
     })
 
+    await updatePendingCount()
+  }, [])
+
+  const deleteTaskOffline = useCallback(async (taskId: string) => {
+    await db.tasks.delete(taskId)
+    await db.pendingSync.add({
+      type: 'task_delete',
+      entity_id: taskId,
+      data: {},
+      created_at: Date.now(),
+      retries: 0,
+    })
     await updatePendingCount()
   }, [])
 

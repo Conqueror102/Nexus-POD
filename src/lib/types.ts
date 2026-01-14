@@ -152,3 +152,36 @@ export interface Notification {
   pods?: { id: string; title: string; npn: string } | null
   tasks?: { id: string; name: string } | null
 }
+
+export interface PodSubscription {
+  id: string
+  pod_id: string
+  plan_code: string
+  plan_name: 'lite' | 'pro' | 'enterprise'
+  paystack_subscription_code: string | null
+  paystack_customer_code: string | null
+  paystack_email_token: string | null
+  status: 'inactive' | 'active' | 'cancelled' | 'past_due' | 'pending'
+  member_limit: number
+  storage_limit_bytes: number
+  features: {
+    basic_features: boolean
+    premium_automations: boolean
+  }
+  current_period_start: string | null
+  current_period_end: string | null
+  cancelled_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SubscriptionPlan {
+  id: string
+  name: string
+  code: string
+  price: number
+  interval: 'monthly' | 'annually'
+  member_limit: number
+  storage_gb: number
+  features: string[]
+}
