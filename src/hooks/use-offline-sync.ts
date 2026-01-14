@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { db, setLastSyncTime, type PendingSync } from '@/lib/offline-db'
+import { db, setLastSyncTime, type PendingSync, type OfflineTaskComment } from '@/lib/offline-db'
 import { toast } from 'sonner'
+import type { Profile } from '@/lib/types'
 
 export function useOfflineSync() {
   // Initialize as null to indicate "unknown" state during SSR/hydration
@@ -97,7 +98,7 @@ export function useOfflineSync() {
         if (!res.ok) throw new Error('Failed to create task')
         const task = await res.json()
         await db.tasks.delete(item.entity_id)
-        await db.tasks.put({ ...task, synced_at: Date.now(), is_dirty: false })
+        await db.tasks.put({ ...task, synced_at: Date.now(), is_dirty: false, labels: task.labels || [] })
         break
       }
       case 'task_update': {
@@ -120,6 +121,18 @@ export function useOfflineSync() {
         const msg = await res.json()
         await db.chatMessages.delete(item.entity_id)
         await db.chatMessages.put({ ...msg, synced_at: Date.now(), is_dirty: false })
+        break
+      }
+      case 'comment_create': {
+        const res = await fetch(`/api/tasks/${item.data.task_id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: item.data.content }),
+        })
+        if (!res.ok) throw new Error('Failed to create comment')
+        const comment = await res.json()
+        await db.comments.delete(item.entity_id)
+        await db.comments.put({ ...comment, synced_at: Date.now(), is_dirty: false })
         break
       }
     }
@@ -153,9 +166,10 @@ export function useOfflineSync() {
       pod: { id: string; npn: string; title: string; summary: string | null; avatar_url: string | null; founder_id: string; storage_used_bytes: number };
       role: 'founder' | 'member';
       projects: Array<{ id: string; pod_id: string; name: string; description: string | null; created_by: string }>;
-      tasks: Array<{ id: string; project_id: string; name: string; description: string; due_date: string; assigned_to: string | null; status: 'not_started' | 'ongoing' | 'completed'; priority: 'low' | 'medium' | 'high'; created_by: string }>;
+      tasks: Array<{ id: string; project_id: string; name: string; description: string; due_date: string; assigned_to: string | null; status: 'not_started' | 'ongoing' | 'completed'; priority: 'low' | 'medium' | 'high'; created_by: string; labels: string[] }>;
       members: Array<{ id: string; pod_id: string; user_id: string; role: 'founder' | 'member'; profiles: { display_name: string | null; email: string; avatar_url: string | null } }>;
       chatMessages: Array<{ id: string; pod_id: string; user_id: string; content: string; created_at: string }>;
+      comments?: Array<{ id: string; task_id: string; user_id: string; content: string; created_at: string; updated_at?: string; profiles?: Profile }>;
     }
   ) => {
     const now = Date.now()
@@ -201,6 +215,23 @@ export function useOfflineSync() {
       }
     }
 
+    if (podData.comments) {
+      const existingComments = await db.comments.where('task_id').anyOf(podData.tasks.map(t => t.id)).toArray()
+      const dirtyCommentIds = new Set(existingComments.filter(c => c.is_dirty).map(c => c.id))
+      
+      for (const comment of podData.comments) {
+        if (!dirtyCommentIds.has(comment.id)) {
+          await db.comments.put({
+            ...comment,
+            user_display_name: comment.profiles?.display_name || undefined,
+            user_avatar_url: comment.profiles?.avatar_url || undefined,
+            synced_at: now,
+            is_dirty: false 
+          })
+        }
+      }
+    }
+
     await setLastSyncTime(podId)
   }, [])
 
@@ -211,6 +242,7 @@ export function useOfflineSync() {
     due_date: string
     assigned_to: string | null
     priority: 'low' | 'medium' | 'high'
+    labels: string[]
   }, createdBy: string) => {
     const localId = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
     
@@ -237,7 +269,7 @@ export function useOfflineSync() {
     return offlineTask
   }, [])
 
-  const updateTaskOffline = useCallback(async (taskId: string, updates: { status?: string }) => {
+  const updateTaskOffline = useCallback(async (taskId: string, updates: { status?: 'not_started' | 'ongoing' | 'completed'; [key: string]: any }) => {
     await db.tasks.update(taskId, { ...updates, is_dirty: true })
     
     await db.pendingSync.add({
@@ -278,6 +310,35 @@ export function useOfflineSync() {
     return offlineMessage
   }, [])
 
+  const addCommentOffline = useCallback(async (taskId: string, content: string, user: Profile) => {
+    const localId = 'local_cmt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+    
+    const offlineComment: OfflineTaskComment = {
+      id: localId,
+      task_id: taskId,
+      user_id: user.id,
+      content,
+      created_at: new Date().toISOString(),
+      synced_at: Date.now(),
+      is_dirty: true,
+      local_id: localId,
+      user_display_name: user.display_name || undefined,
+      user_avatar_url: user.avatar_url || undefined,
+    }
+
+    await db.comments.put(offlineComment)
+    await db.pendingSync.add({
+      type: 'comment_create',
+      entity_id: localId,
+      data: { task_id: taskId, content },
+      created_at: Date.now(),
+      retries: 0,
+    })
+
+    await updatePendingCount()
+    return offlineComment
+  }, [])
+
   const getOfflinePods = useCallback(async () => {
     return await db.pods.toArray()
   }, [])
@@ -294,6 +355,10 @@ export function useOfflineSync() {
     return await db.members.where('pod_id').equals(podId).toArray()
   }, [])
 
+  const getOfflineComments = useCallback(async (taskId: string) => {
+    return await db.comments.where('task_id').equals(taskId).sortBy('created_at')
+  }, [])
+
   const getOfflineChat = useCallback(async (podId: string) => {
     return await db.chatMessages.where('pod_id').equals(podId).sortBy('created_at')
   }, [])
@@ -308,10 +373,12 @@ export function useOfflineSync() {
     createTaskOffline,
     updateTaskOffline,
     sendChatOffline,
+    addCommentOffline,
     getOfflinePods,
     getOfflineProjects,
     getOfflineTasks,
     getOfflineMembers,
     getOfflineChat,
+    getOfflineComments,
   }
 }

@@ -12,8 +12,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
   Plus, FolderKanban, Calendar, CheckCircle2, Circle, Clock, Loader2, Users,
-  ArrowUpCircle, ArrowRightCircle, ArrowDownCircle
+  ArrowUpCircle, ArrowRightCircle, ArrowDownCircle, MoreVertical, Trash2, Pencil, Tag
 } from "lucide-react"
+import type { Profile } from "@/lib/types"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { format, isPast } from "date-fns"
 import type { DashboardTabProps, TaskWithAssignee, PodMemberWithProfile } from "./types"
 import { statusColors, statusLabels } from "./types"
@@ -37,7 +40,13 @@ interface ProjectsTabProps {
     due_date: string
     assigned_to: string
     priority: "low" | "medium" | "high"
+    assigned_to: string
+    priority: "low" | "medium" | "high"
+    labels: string[]
   }) => Promise<void>
+  onDeleteTask: (taskId: string) => void
+  onDeleteProject: (projectId: string) => void
+  user: Profile | null
 }
 
 export function ProjectsTab({
@@ -51,11 +60,20 @@ export function ProjectsTab({
   onTaskClick,
   onUpdateTaskStatus,
   onCreateProject,
+  onCreateProject,
   onCreateTask,
+  onDeleteTask,
+  onDeleteProject,
+  user,
 }: ProjectsTabProps) {
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [createTaskOpen, setCreateTaskOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [deleteTaskOpen, setDeleteTaskOpen] = useState(false)
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null)
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
+  const [activeLabels, setActiveLabels] = useState<string[]>([])
+  const [newLabel, setNewLabel] = useState("")
 
   const [newProjectName, setNewProjectName] = useState("")
   const [newProjectDescription, setNewProjectDescription] = useState("")
@@ -102,6 +120,10 @@ export function ProjectsTab({
       due_date: newTaskDueDate,
       assigned_to: newTaskAssignee,
       priority: newTaskPriority,
+      due_date: newTaskDueDate,
+      assigned_to: newTaskAssignee,
+      priority: newTaskPriority,
+      labels: activeLabels,
     })
     setCreateTaskOpen(false)
     setNewTaskName("")
@@ -109,8 +131,34 @@ export function ProjectsTab({
     setNewTaskDueDate("")
     setNewTaskAssignee("")
     setNewTaskPriority("medium")
+    setActiveLabels([])
     setSelectedProjectId("")
     setSubmitting(false)
+  }
+
+  function handleAddLabel(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && newLabel.trim()) {
+      e.preventDefault()
+      if (!activeLabels.includes(newLabel.trim())) {
+        setActiveLabels([...activeLabels, newLabel.trim()])
+      }
+      setNewLabel("")
+    }
+  }
+
+  function removeLabel(label: string) {
+    setActiveLabels(activeLabels.filter(l => l !== label))
+  }
+
+  const canDeleteProject = isFounder
+  const canEditProject = isFounder
+
+  function canDeleteTask(task: TaskWithAssignee) {
+    return isFounder || task.created_by === user?.id
+  }
+
+  function canEditTask(task: TaskWithAssignee) {
+    return isFounder || task.assigned_to === user?.id || task.created_by === user?.id
   }
 
   return (
@@ -249,6 +297,36 @@ export function ProjectsTab({
                       ))}
                     </SelectContent>
                   </Select>
+                <div className="space-y-2">
+                  <Label>Assign To</Label>
+                  <Select value={newTaskAssignee} onValueChange={setNewTaskAssignee}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map((m) => (
+                        <SelectItem key={m.profiles.id} value={m.profiles.id}>
+                          {m.profiles.display_name || m.profiles.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Labels</Label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {activeLabels.map(label => (
+                      <Badge key={label} variant="secondary" className="cursor-pointer" onClick={() => removeLabel(label)}>
+                        {label} &times;
+                      </Badge>
+                    ))}
+                  </div>
+                  <Input 
+                    value={newLabel} 
+                    onChange={(e) => setNewLabel(e.target.value)} 
+                    onKeyDown={handleAddLabel}
+                    placeholder="Type and press Enter to add label" 
+                  />
                 </div>
               </div>
               <DialogFooter>
@@ -286,7 +364,27 @@ export function ProjectsTab({
                         <Progress value={projectProgress} className="w-24 h-2" />
                         <span className="text-xs text-muted-foreground">{projectProgress}%</span>
                       </div>
+                        <span className="text-xs text-muted-foreground">{projectProgress}%</span>
+                      </div>
                     </div>
+                    {canDeleteProject && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 ml-2">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem 
+                            onClick={() => { setProjectToDelete(project.id); setDeleteProjectOpen(true) }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -334,6 +432,16 @@ export function ProjectsTab({
                           <Badge variant="outline">
                             {statusLabels[task.status]}
                           </Badge>
+                          {canDeleteTask(task) && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6 ml-2 opacity-0 group-hover:opacity-100 transition-opacity" 
+                              onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); setDeleteTaskOpen(true) }}
+                            >
+                              <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                            </Button>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -358,6 +466,32 @@ export function ProjectsTab({
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={deleteTaskOpen} onOpenChange={setDeleteTaskOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Task?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTaskToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (taskToDelete) onDeleteTask(taskToDelete); setTaskToDelete(null) }} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteProjectOpen} onOpenChange={setDeleteProjectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+            <AlertDialogDescription>This will permanently delete the project and all its tasks.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setProjectToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (projectToDelete) onDeleteProject(projectToDelete); setProjectToDelete(null) }} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

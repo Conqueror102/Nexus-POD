@@ -26,12 +26,15 @@ import { ErrorBoundary } from "@/components/error-boundary"
 import { FilePreview } from "@/components/file-preview"
 import { OfflineIndicator } from "@/components/offline-indicator"
 import { PodAvatarUpload } from "@/components/pod-avatar-upload"
+import { PodAvatarUpload } from "@/components/pod-avatar-upload"
 import { useOfflineSync } from "@/hooks/use-offline-sync"
+import { useReminders } from "@/hooks/use-reminders"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   OverviewTab, ProjectsTab, MembersTab, FilesTab, ChatTab, DashboardSidebar, MobileMenuButton,
   TaskWithAssignee, PodMemberWithProfile, ChatMessageWithProfile, TaskCommentWithProfile, statusColors,
 } from "@/components/dashboard"
+import { TaskComments } from "@/components/task-comments"
 import { DeletePodDialog } from "@/components/delete-pod-dialog"
 
 export function DashboardContent() {
@@ -143,6 +146,9 @@ export function DashboardContent() {
     fetchPods()
     fetchNotifications()
   }, [fetchPods, fetchNotifications])
+
+  // Reminders
+  useReminders(tasks, user)
 
   useEffect(() => {
     if (selectedPod) fetchPodData()
@@ -628,6 +634,35 @@ export function DashboardContent() {
     else toast.error("Failed to delete file")
   }
 
+  async function handleDeleteTask(taskId: string) {
+    if (!navigator.onLine) {
+      toast.error("Offline deletion not supported yet")
+      return
+    }
+    const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" })
+    if (res.ok) {
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+      toast.success("Task deleted")
+    } else {
+      toast.error("Failed to delete task")
+    }
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    if (!navigator.onLine) {
+      toast.error("Offline deletion not supported yet")
+      return
+    }
+    const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
+    if (res.ok) {
+      setProjects(prev => prev.filter(p => p.id !== projectId))
+      setTasks(prev => prev.filter(t => t.project_id !== projectId))
+      toast.success("Project deleted")
+    } else {
+      toast.error("Failed to delete project")
+    }
+  }
+
   async function handleFilePreview(file: PodFileWithProfile) {
     const res = await fetch(`/api/files/${file.id}`)
     if (res.ok) {
@@ -815,7 +850,24 @@ export function DashboardContent() {
                   </TabsList>
 
                   <TabsContent value="overview"><OverviewTab tasks={tasks} activityLogs={activityLogs} user={user} onTaskClick={openTaskDetail} /></TabsContent>
-                  <TabsContent value="projects"><ProjectsTab projects={projects} tasks={tasks} members={members} isFounder={isFounder} searchQuery={searchQuery} filterPriority={filterPriority} filterStatus={filterStatus} onTaskClick={openTaskDetail} onUpdateTaskStatus={handleUpdateTaskStatus} onCreateProject={handleCreateProject} onCreateTask={handleCreateTask} /></TabsContent>
+                  <TabsContent value="projects">
+                    <ProjectsTab 
+                      projects={projects} 
+                      tasks={tasks} 
+                      members={members} 
+                      isFounder={isFounder} 
+                      searchQuery={searchQuery} 
+                      filterPriority={filterPriority} 
+                      filterStatus={filterStatus} 
+                      onTaskClick={openTaskDetail} 
+                      onUpdateTaskStatus={handleUpdateTaskStatus} 
+                      onCreateProject={handleCreateProject} 
+                      onCreateTask={handleCreateTask}
+                      onDeleteTask={handleDeleteTask}
+                      onDeleteProject={handleDeleteProject}
+                      user={user}
+                    />
+                  </TabsContent>
                   <TabsContent value="members"><MembersTab members={members} isFounder={isFounder} onRemoveMember={handleRemoveMember} /></TabsContent>
                   <TabsContent value="files"><FilesTab selectedPod={selectedPod} podFiles={podFiles} isFounder={isFounder} user={user} onFilePreview={handleFilePreview} onFileDownload={handleFileDownload} onFileDelete={handleFileDelete} fetchPodData={fetchPodData} /></TabsContent>
                   <TabsContent value="chat"><ChatTab chatMessages={chatMessages} user={user} chatMessage={chatMessage} onChatMessageChange={setChatMessage} onSendChat={handleSendChat} /></TabsContent>
@@ -850,27 +902,9 @@ export function DashboardContent() {
                             <div><h4 className="text-sm font-medium mb-1">Assignee</h4><p className="text-sm text-muted-foreground">{selectedTask.profiles?.display_name || selectedTask.profiles?.email || "Unassigned"}</p></div>
                           </div>
                           <Separator />
-                          <div>
-                            <h4 className="text-sm font-medium mb-3">Comments</h4>
-                            <ScrollArea className="h-48 pr-4">
-                              <div className="space-y-3">
-                                {taskComments.map((comment) => (
-                                  <div key={comment.id} className="flex gap-3">
-                                    <Avatar className="h-8 w-8"><AvatarImage src={comment.profiles?.avatar_url || undefined} /><AvatarFallback className="text-xs">{comment.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback></Avatar>
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2"><span className="text-sm font-medium">{comment.profiles?.display_name}</span><span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}</span></div>
-                                      <p className="text-sm text-muted-foreground mt-1">{comment.content}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                                {taskComments.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>}
-                              </div>
-                            </ScrollArea>
-                            <div className="flex gap-2 mt-4">
-                              <Input value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAddComment()} placeholder="Add a comment..." />
-                              <Button onClick={handleAddComment} disabled={submitting || !newComment.trim()}><Send className="w-4 h-4" /></Button>
-                            </div>
-                          </div>
+                          {selectedPod && user && (
+                            <TaskComments taskId={selectedTask.id} podId={selectedPod.id} user={user} />
+                          )}
                         </div>
                       </>
                     )}

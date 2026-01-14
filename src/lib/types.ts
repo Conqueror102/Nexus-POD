@@ -60,6 +60,7 @@ export interface Task {
   assigned_to: string | null
   status: 'not_started' | 'ongoing' | 'completed'
   priority: 'low' | 'medium' | 'high'
+  labels: string[]
   created_by: string
   created_at: string
   updated_at: string
@@ -84,6 +85,8 @@ export interface TaskComment {
   user_id: string
   content: string
   created_at: string
+  updated_at?: string
+  profiles?: Profile
 }
 
 export interface ChatMessage {
@@ -98,7 +101,7 @@ export interface TaskReminder {
   id: string
   task_id: string
   reminder_time: string
-  hours_before: number
+  hours_before: number // 24, 12, 6, 1
   sent: boolean
   created_at: string
 }
