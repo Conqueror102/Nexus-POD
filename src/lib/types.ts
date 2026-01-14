@@ -3,6 +3,7 @@ export interface Profile {
   email: string
   display_name: string | null
   avatar_url: string | null
+  role: 'user' | 'admin'
   notification_email: boolean
   notification_push: boolean
   timezone: string

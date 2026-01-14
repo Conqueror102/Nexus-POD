@@ -15,7 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Hexagon, Plus, Bell, Settings, User, LogOut, Loader2, Menu } from "lucide-react"
+import { Hexagon, Plus, Bell, Settings, User, LogOut, Loader2, Menu, Shield } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import type { PodWithRole, Profile, Notification } from "@/lib/types"
 
@@ -187,6 +187,21 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
               <SheetHeader><SheetTitle>Quick Settings</SheetTitle><SheetDescription>Manage your account</SheetDescription></SheetHeader>
               <div className="py-6 space-y-6">
                 <div className="space-y-4">
+                  {user?.role === 'admin' && (
+                    <>
+                      <h3 className="text-sm font-medium flex items-center gap-2 text-primary">
+                        <Shield className="w-4 h-4" />
+                        Administration
+                      </h3>
+                      <Link href="/admin">
+                        <Button variant="default" className="w-full bg-primary/20 text-primary hover:bg-primary/30 border-primary/20">
+                          <Shield className="w-4 h-4 mr-2" />
+                          Admin Dashboard
+                        </Button>
+                      </Link>
+                      <Separator />
+                    </>
+                  )}
                   <h3 className="text-sm font-medium flex items-center gap-2"><User className="w-4 h-4" />Profile</h3>
                   <div className="flex items-center gap-4">
                     <Avatar className="h-16 w-16"><AvatarImage src={user?.avatar_url || undefined} /><AvatarFallback className="text-lg">{user?.display_name?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback></Avatar>
