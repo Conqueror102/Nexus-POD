@@ -91,12 +91,17 @@ export function ProjectsTab({
     return matchesSearch && matchesPriority && matchesStatus
   })
 
-  const filteredProjects = searchQuery
-    ? projects.filter(p => 
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-      )
-    : projects
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = !searchQuery || 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
+    
+    // Members only see projects they have tasks in
+    const hasTasks = tasks.some(t => t.project_id === p.id)
+    const isVisible = isFounder || hasTasks
+    
+    return matchesSearch && isVisible
+  })
 
   async function handleCreateProject() {
     if (!newProjectName.trim()) return
