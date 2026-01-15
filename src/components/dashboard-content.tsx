@@ -7,6 +7,7 @@ import { db } from "@/lib/offline-db"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,7 +20,8 @@ import { toast } from "sonner"
 import { 
   Hexagon, Plus, FolderKanban, Users, MessageSquare,
   Loader2, Copy, Check, Send, MoreVertical, Trash2, Link as LinkIcon,
-  BarChart3, Search, Download, Filter, HardDrive, Menu, Image as ImageIcon, Settings
+  BarChart3, Search, Download, Filter, HardDrive, Menu, Image as ImageIcon, Settings,
+  Clock, CheckCircle2
 } from "lucide-react"
 import { format, formatDistanceToNow, isPast } from "date-fns"
 import type { PodWithRole, Project, Task, Notification, ActivityLog, PodFileWithProfile } from "@/lib/types"
@@ -90,8 +92,19 @@ export function DashboardContent() {
       if (!isOnline) {
         try {
           const offlinePods = await db.pods.toArray()
-          setPods(offlinePods)
-          if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
+          setPods(offlinePods.map(p => ({
+            ...p,
+            updated_at: new Date(p.updated_at).toISOString(),
+            created_at: p.created_at || new Date().toISOString()
+          })))
+          if (offlinePods.length > 0 && !selectedPod) {
+            const first = offlinePods[0]
+            setSelectedPod({
+              ...first,
+              updated_at: new Date(first.updated_at).toISOString(),
+              created_at: first.created_at || new Date().toISOString()
+            })
+          }
           setLoading(false)
           return
         } catch (error) { console.error('Error loading offline pods:', error) }
@@ -102,17 +115,43 @@ export function DashboardContent() {
         if (res.ok) {
           const data = await res.json()
           setPods(data)
-          data.forEach(pod => db.pods.put({ ...pod, synced_at: Date.now() }))
+          data.forEach((pod: PodWithRole) => db.pods.put({ 
+            ...pod, 
+            synced_at: Date.now(),
+            updated_at: new Date(pod.updated_at).getTime(),
+          }))
           if (data.length > 0 && !selectedPod) setSelectedPod(data[0])
         } else {
           const offlinePods = await db.pods.toArray()
-          setPods(offlinePods)
-          if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
+          setPods(offlinePods.map(p => ({
+            ...p,
+            updated_at: new Date(p.updated_at).toISOString(),
+            created_at: p.created_at || new Date().toISOString()
+          })))
+          if (offlinePods.length > 0 && !selectedPod) {
+            const first = offlinePods[0]
+            setSelectedPod({
+              ...first,
+              updated_at: new Date(first.updated_at).toISOString(),
+              created_at: first.created_at || new Date().toISOString()
+            })
+          }
         }
       } catch (fetchError) {
         const offlinePods = await db.pods.toArray()
-        setPods(offlinePods)
-        if (offlinePods.length > 0 && !selectedPod) setSelectedPod(offlinePods[0])
+        setPods(offlinePods.map(p => ({
+          ...p,
+          updated_at: new Date(p.updated_at).toISOString(),
+          created_at: p.created_at || new Date().toISOString()
+        })))
+        if (offlinePods.length > 0 && !selectedPod) {
+          const first = offlinePods[0]
+          setSelectedPod({
+            ...first,
+            updated_at: new Date(first.updated_at).toISOString(),
+            created_at: first.created_at || new Date().toISOString()
+          })
+        }
       }
     } finally { setLoading(false) }
   }, [isOnline, selectedPod])
@@ -150,15 +189,37 @@ export function DashboardContent() {
           const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
           const offlineMembers = await db.members.where('pod_id').equals(selectedPod.id).toArray()
           
-          setProjects(offlineProjects)
-          setTasks(offlineTasks as any)
+          setProjects(offlineProjects.map(p => ({
+            ...p,
+            updated_at: new Date(p.updated_at).toISOString(),
+            created_at: p.created_at || new Date().toISOString()
+          })))
+          // Tasks and Messages usually already have string dates in offline DB for created_at/due_date but updated_at is number
+          // Check OfflineTask interface: updated_at: number. Task interface: updated_at: string.
+          setTasks(offlineTasks.map(t => ({
+            ...t,
+            updated_at: new Date(t.updated_at).toISOString(),
+            // created_at is string in OfflineTask, so no change needed
+          })) as any)
           setChatMessages(offlineMessages as any)
           setMembers(offlineMembers.map(m => ({
             id: m.id,
             pod_id: m.pod_id,
             user_id: m.user_id,
             role: m.role,
-            profiles: { display_name: m.display_name, email: m.email, avatar_url: m.avatar_url }
+            joined_at: m.joined_at,
+            profiles: {
+              display_name: m.display_name,
+              email: m.email,
+              avatar_url: m.avatar_url,
+              id: m.user_id,
+              notification_email: false,
+              notification_push: false,
+              timezone: '',
+              created_at: '',
+              updated_at: '',
+              role: 'user'
+            }
           })))
           setActivityLogs([])
           setPodFiles([])
@@ -205,17 +266,31 @@ export function DashboardContent() {
   useEffect(() => {
     if (!selectedPod || !user) return
 
+    // Get project IDs for this pod to filter task changes
+    const projectIds = projects.map(p => p.id)
+
     const channel = supabase
       .channel(`pod-${selectedPod.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `pod_id=eq.${selectedPod.id}` }, async (payload) => {
         const { data: message } = await supabase.from('chat_messages').select(`*, profiles:user_id (id, display_name, email, avatar_url)`).eq('id', payload.new.id).single()
         if (message) setChatMessages(prev => [...prev, message as ChatMessageWithProfile])
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchPodData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+        // Check if the task belongs to a project in this pod
+        const newData = payload.new as Partial<Task>
+        const oldData = payload.old as Partial<Task>
+        const taskProjectId = newData?.project_id || oldData?.project_id
+        
+        if (taskProjectId && projectIds.includes(taskProjectId)) {
+          fetchPodData()
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects', filter: `pod_id=eq.${selectedPod.id}` }, () => fetchPodData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, () => fetchPodData())
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [selectedPod, user, supabase, fetchPodData])
+  }, [selectedPod, user, supabase, fetchPodData, projects])
 
   async function handleCreatePod(title: string, summary: string) {
     try {
@@ -229,9 +304,15 @@ export function DashboardContent() {
           founder_id: user?.id || '',
           storage_used_bytes: 0,
           role: 'founder' as const,
+          created_at: new Date().toISOString(),
           synced_at: 0,
+          updated_at: new Date().toISOString(),
         }
-        await db.pods.add(offlinePod)
+        await db.pods.add({
+            ...offlinePod,
+            updated_at: Date.now(), // DB expects number
+            synced_at: 0
+        })
         setPods(prev => [offlinePod, ...prev])
         setSelectedPod(offlinePod)
         toast.success("Pod saved offline")
@@ -255,7 +336,7 @@ export function DashboardContent() {
     try {
       if (!isOnline) {
         const updatedPod = { ...selectedPod, title: editPodTitle, summary: editPodSummary }
-        await db.pods.put(updatedPod)
+        await db.pods.put({ ...updatedPod, synced_at: Date.now(), updated_at: Date.now() })
         setSelectedPod(updatedPod)
         setPods(prev => prev.map(p => p.id === selectedPod.id ? updatedPod : p))
         toast.success("Pod updated offline")
@@ -284,7 +365,7 @@ export function DashboardContent() {
     if (!selectedPod || !user) return
     if (!isOnline) {
       const offlineProject = await createProjectOffline({ pod_id: selectedPod.id, name, description }, user.id)
-      setProjects(prev => [offlineProject as Project, ...prev])
+      setProjects(prev => [{ ...offlineProject, updated_at: new Date(offlineProject.updated_at).toISOString() } as Project, ...prev])
       toast.success("Project saved offline")
       return
     }
@@ -332,8 +413,25 @@ export function DashboardContent() {
       toast.success("Status updated offline")
       return
     }
-    await fetch(`/api/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) })
-    fetchPodData()
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { 
+        method: "PATCH", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ status }) 
+      })
+      if (res.ok) {
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
+        toast.success("Status updated")
+        fetchPodData()
+      } else {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        toast.error(`Failed to update status: ${errorData.error || res.statusText}`)
+        console.error('Status update failed:', res.status, errorData)
+      }
+    } catch (error) {
+      toast.error("Failed to update status - network error")
+      console.error('Status update error:', error)
+    }
   }
 
   async function handleSendChat() {
@@ -410,8 +508,8 @@ export function DashboardContent() {
     setSubmitting(true)
     const res = await fetch(`/api/pods/${selectedPod.id}/invite`, { method: "POST" })
     if (res.ok) {
-      const { code } = await res.json()
-      setInviteLink(`${window.location.origin}/join/${code}`)
+      const { invite_code } = await res.json()
+      setInviteLink(`${window.location.origin}/join/${invite_code}`)
     }
     setSubmitting(false)
   }

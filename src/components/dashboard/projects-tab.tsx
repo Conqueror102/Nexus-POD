@@ -359,9 +359,20 @@ export function ProjectsTab({
                 <span className="text-xs text-muted-foreground whitespace-nowrap">{projectProgress}%</span>
               </div>
               <div className="space-y-2">
-                {projectTasks.map((task) => (
+                {projectTasks.map((task) => {
+                  const canUpdateStatus = isFounder || task.assigned_to === user?.id || task.created_by === user?.id
+                  return (
                   <div key={task.id} className="group flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer" onClick={() => onTaskClick(task)}>
-                    <div onClick={(e) => { e.stopPropagation(); onUpdateTaskStatus(task.id, task.status === 'completed' ? 'ongoing' : 'completed') }} className="flex-shrink-0">
+                    <div 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (canUpdateStatus) {
+                          onUpdateTaskStatus(task.id, task.status === 'completed' ? 'ongoing' : 'completed') 
+                        }
+                      }} 
+                      className={`flex-shrink-0 ${canUpdateStatus ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+                      title={canUpdateStatus ? 'Click to toggle status' : 'Only assignee or founder can update status'}
+                    >
                       {task.status === "completed" ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : task.status === "ongoing" ? <Clock className="w-5 h-5 text-amber-500" /> : <Circle className="w-5 h-5 text-muted-foreground" />}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -385,7 +396,8 @@ export function ProjectsTab({
                       )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
                 {projectTasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No tasks yet</p>}
               </div>
             </CardContent>

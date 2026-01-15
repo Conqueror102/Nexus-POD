@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Send } from "lucide-react"
-import type { OfflineTaskComment } from "@/lib/offline-db"
+import { db, type OfflineTaskComment } from "@/lib/offline-db"
 import type { Profile } from "@/lib/types"
 import { useOfflineSync } from "@/hooks/use-offline-sync"
 import { formatDistanceToNow } from "date-fns"
@@ -18,18 +18,20 @@ interface TaskCommentsProps {
 }
 
 export function TaskComments({ taskId, podId, user }: TaskCommentsProps) {
-  const { getOfflineComments, addCommentOffline } = useOfflineSync()
+  const { getOfflineComments, addCommentOffline, isOnline } = useOfflineSync()
   const [comments, setComments] = useState<OfflineTaskComment[]>([])
   const [newComment, setNewComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const hasFetchedFromServer = useRef(false)
 
   useEffect(() => {
+    // Reset the flag when taskId changes
+    hasFetchedFromServer.current = false
     loadComments()
     
-    // Poll for new comments occasionally or relies on sync to update DB
-    // Ideally we would listen to Dexie changes, but polling is simpler for now
+    // Poll for new comments occasionally
     const interval = setInterval(loadComments, 5000) 
     return () => clearInterval(interval)
   }, [taskId])
@@ -42,11 +44,51 @@ export function TaskComments({ taskId, podId, user }: TaskCommentsProps) {
   }, [comments])
 
   async function loadComments() {
-    const data = await getOfflineComments(taskId)
-    // Only update if length changed or something significant to avoid jitters
-    // ideally we do deep compare but simply setting it is fine for MVP
-    setComments(data)
-    setLoading(false)
+    try {
+      // Try to fetch from server first when online
+      if (isOnline && !hasFetchedFromServer.current) {
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/comments`, {
+            signal: AbortSignal.timeout(10000)
+          })
+          if (res.ok) {
+            const serverComments = await res.json()
+            hasFetchedFromServer.current = true
+            
+            // Cache comments to offline database
+            const now = Date.now()
+            for (const comment of serverComments) {
+              await db.comments.put({
+                id: comment.id,
+                task_id: comment.task_id,
+                user_id: comment.user_id,
+                content: comment.content,
+                created_at: comment.created_at,
+                synced_at: now,
+                updated_at: comment.updated_at ? new Date(comment.updated_at).getTime() : now,
+                is_dirty: false,
+                user_display_name: comment.profiles?.display_name || undefined,
+                user_avatar_url: comment.profiles?.avatar_url || undefined,
+              })
+            }
+            
+            // Now load from offline DB to get consistent format
+            const data = await getOfflineComments(taskId)
+            setComments(data)
+            setLoading(false)
+            return
+          }
+        } catch (error) {
+          console.warn('Failed to fetch comments from server, using offline data:', error)
+        }
+      }
+      
+      // Fall back to offline database
+      const data = await getOfflineComments(taskId)
+      setComments(data)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleSubmit() {

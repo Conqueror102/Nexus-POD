@@ -205,7 +205,7 @@ export function useOfflineSync() {
       role: 'founder' | 'member';
       projects: Array<{ id: string; pod_id: string; name: string; description: string | null; created_by: string }>;
       tasks: Array<{ id: string; project_id: string; name: string; description: string; due_date: string; assigned_to: string | null; status: 'not_started' | 'ongoing' | 'completed'; priority: 'low' | 'medium' | 'high'; created_by: string; labels: string[] }>;
-      members: Array<{ id: string; pod_id: string; user_id: string; role: 'founder' | 'member'; profiles: { display_name: string | null; email: string; avatar_url: string | null } }>;
+      members: Array<{ id: string; pod_id: string; user_id: string; role: 'founder' | 'member'; joined_at: string; profiles: { display_name: string | null; email: string; avatar_url: string | null } }>;
       chatMessages: Array<{ id: string; pod_id: string; user_id: string; content: string; created_at: string }>;
       comments?: Array<{ id: string; task_id: string; user_id: string; content: string; created_at: string; updated_at?: string; profiles?: Profile }>;
     }
@@ -215,12 +215,18 @@ export function useOfflineSync() {
     await db.pods.put({
       ...podData.pod,
       role: podData.role,
+      created_at: new Date().toISOString(), // Fallback if missing from podData
       synced_at: now,
       updated_at: now,
     })
 
     await db.projects.bulkPut(
-      podData.projects.map(p => ({ ...p, synced_at: now, updated_at: now }))
+      podData.projects.map(p => ({ 
+        ...p, 
+        created_at: new Date().toISOString(), // Fallback
+        synced_at: now, 
+        updated_at: now 
+      }))
     )
 
     const existingTasks = await db.tasks.where('project_id').anyOf(podData.projects.map(p => p.id)).toArray()
@@ -228,7 +234,13 @@ export function useOfflineSync() {
     
     for (const task of podData.tasks) {
       if (!dirtyTaskIds.has(task.id)) {
-        await db.tasks.put({ ...task, synced_at: now, updated_at: now, is_dirty: false })
+        await db.tasks.put({ 
+          ...task, 
+          created_at: new Date().toISOString(), // Fallback
+          synced_at: now, 
+          updated_at: now, 
+          is_dirty: false 
+        })
       }
     }
 
@@ -241,6 +253,8 @@ export function useOfflineSync() {
         display_name: m.profiles.display_name,
         email: m.profiles.email,
         avatar_url: m.profiles.avatar_url,
+        joined_at: m.joined_at, // Map joined_at
+        created_at: new Date().toISOString(), // Fallback
         synced_at: now,
         updated_at: now,
       }))
@@ -251,7 +265,12 @@ export function useOfflineSync() {
     
     for (const msg of podData.chatMessages) {
       if (!dirtyMessageIds.has(msg.id)) {
-        await db.chatMessages.put({ ...msg, synced_at: now, updated_at: now, is_dirty: false })
+        await db.chatMessages.put({ 
+          ...msg, 
+          synced_at: now, 
+          updated_at: now, 
+          is_dirty: false 
+        })
       }
     }
 
@@ -266,6 +285,7 @@ export function useOfflineSync() {
             user_display_name: comment.profiles?.display_name || undefined,
             user_avatar_url: comment.profiles?.avatar_url || undefined,
             synced_at: now,
+            updated_at: comment.updated_at ? new Date(comment.updated_at).getTime() : now,
             is_dirty: false 
           })
         }
@@ -281,6 +301,7 @@ export function useOfflineSync() {
       id: localId,
       ...data,
       created_by: createdBy,
+      created_at: new Date().toISOString(),
       synced_at: Date.now(),
       updated_at: Date.now(),
     }
@@ -341,6 +362,7 @@ export function useOfflineSync() {
       ...taskData,
       status: 'not_started' as const,
       created_by: createdBy,
+      created_at: new Date().toISOString(),
       synced_at: now,
       updated_at: now,
       is_dirty: true,
@@ -480,6 +502,10 @@ export function useOfflineSync() {
     cachePodData,
     createTaskOffline,
     updateTaskOffline,
+    deleteTaskOffline,
+    createProjectOffline,
+    updateProjectOffline,
+    deleteProjectOffline,
     sendChatOffline,
     addCommentOffline,
     getOfflinePods,

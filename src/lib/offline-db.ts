@@ -9,6 +9,7 @@ export interface OfflinePod {
   founder_id: string
   storage_used_bytes: number
   role: 'founder' | 'member'
+  created_at: string
   synced_at: number
   updated_at: number
 }
@@ -19,6 +20,7 @@ export interface OfflineProject {
   name: string
   description: string | null
   created_by: string
+  created_at: string
   synced_at: number
   updated_at: number
 }
@@ -33,6 +35,7 @@ export interface OfflineTask {
   status: 'not_started' | 'ongoing' | 'completed'
   priority: 'low' | 'medium' | 'high'
   created_by: string
+  created_at: string
   synced_at: number
   updated_at: number
   is_dirty?: boolean
@@ -74,6 +77,8 @@ export interface OfflineMember {
   display_name: string | null
   email: string
   avatar_url: string | null
+  joined_at: string
+  created_at: string
   synced_at: number
   updated_at: number
 }

@@ -3,9 +3,11 @@ import { NextResponse } from "next/server"
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient()
+  const { id } = await params
+  
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
@@ -19,7 +21,7 @@ export async function PATCH(
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select("*, projects(pod_id, pods(founder_id))")
-    .eq("id", params.id)
+    .eq("id", id)
     .single()
 
   if (taskError || !task) {
@@ -53,7 +55,7 @@ export async function PATCH(
       ...finalUpdates, 
       updated_at: incoming_updated_at ? new Date(incoming_updated_at).toISOString() : new Date().toISOString() 
     })
-    .eq("id", params.id)
+    .eq("id", id)
     .select()
     .single()
 
@@ -64,7 +66,7 @@ export async function PATCH(
   // Reschedule reminders if due_date changed
   if (isFounder && updates.due_date && updates.due_date !== task.due_date) {
     // Delete old pending reminders
-    await supabase.from('task_reminders').delete().eq('task_id', params.id).eq('sent', false)
+    await supabase.from('task_reminders').delete().eq('task_id', id).eq('sent', false)
     
     // Create new reminders
     const reminderHours = [24, 12, 6, 1]
@@ -84,7 +86,7 @@ export async function PATCH(
 
   // Cancel reminders if completed
   if (updates.status === 'completed') {
-    await supabase.from('task_reminders').delete().eq('task_id', params.id).eq('sent', false)
+    await supabase.from('task_reminders').delete().eq('task_id', id).eq('sent', false)
   }
 
   return NextResponse.json(data)
@@ -92,9 +94,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient()
+  const { id } = await params
+  
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
@@ -105,7 +109,7 @@ export async function DELETE(
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select("*, projects(pod_id, pods(founder_id))")
-    .eq("id", params.id)
+    .eq("id", id)
     .single()
 
   if (taskError || !task) {
@@ -122,7 +126,7 @@ export async function DELETE(
   const { error } = await supabase
     .from("tasks")
     .delete()
-    .eq("id", params.id)
+    .eq("id", id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
