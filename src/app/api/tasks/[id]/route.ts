@@ -38,9 +38,20 @@ export async function PATCH(
 
   // @ts-ignore
   const isFounder = task.projects.pods.founder_id === user.id
+  const isAssignee = task.assignee_id === user.id
 
+  // Members can only update status, founders can update everything
   if (!isFounder) {
-    return NextResponse.json({ error: "Only founders can update tasks" }, { status: 403 })
+    if (!isAssignee) {
+      return NextResponse.json({ error: "Only founders or assigned members can update tasks" }, { status: 403 })
+    }
+    // Members can only update status
+    const allowedFields = ['status', 'updated_at']
+    const updateKeys = Object.keys(updates)
+    const hasDisallowedFields = updateKeys.some(key => !allowedFields.includes(key))
+    if (hasDisallowedFields) {
+      return NextResponse.json({ error: "Members can only update task status" }, { status: 403 })
+    }
   }
 
   delete updates.updated_at
