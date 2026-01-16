@@ -48,7 +48,8 @@ export function DashboardContent() {
     isOnline, isSyncing, pendingCount, syncPendingChanges, cachePodData,
     createTaskOffline, updateTaskOffline, deleteTaskOffline,
     createProjectOffline, updateProjectOffline, deleteProjectOffline,
-    sendChatOffline, addCommentOffline
+    sendChatOffline, addCommentOffline, createPodOffline, updatePodOffline,
+    forceSyncNow, lastSyncError
   } = useOfflineSync()
   
   const [pods, setPods] = useState<PodWithRole[]>([])
@@ -295,26 +296,16 @@ export function DashboardContent() {
   async function handleCreatePod(title: string, summary: string) {
     try {
       if (!isOnline) {
-        const offlinePod = {
-          id: `local_${Date.now()}`,
-          npn: `NP-${Math.floor(Math.random() * 100000)}`,
-          title,
-          summary: summary || null,
-          avatar_url: null,
-          founder_id: user?.id || '',
-          storage_used_bytes: 0,
-          role: 'founder' as const,
-          created_at: new Date().toISOString(),
-          synced_at: 0,
-          updated_at: new Date().toISOString(),
-        }
-        await db.pods.add({
-            ...offlinePod,
-            updated_at: Date.now(), // DB expects number
-            synced_at: 0
+        if (!user) return
+        const offlinePod = await createPodOffline({ title, summary: summary || null }, user.id)
+        setPods(prev => [{
+          ...offlinePod,
+          updated_at: new Date(offlinePod.updated_at).toISOString(),
+        }, ...prev])
+        setSelectedPod({
+          ...offlinePod,
+          updated_at: new Date(offlinePod.updated_at).toISOString(),
         })
-        setPods(prev => [offlinePod, ...prev])
-        setSelectedPod(offlinePod)
         toast.success("Pod saved offline")
         return
       }
@@ -322,7 +313,7 @@ export function DashboardContent() {
       const res = await fetch("/api/pods", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, summary }) })
       if (res.ok) {
         const pod = await res.json()
-        await db.pods.put({ ...pod, role: 'founder', synced_at: Date.now() })
+        await db.pods.put({ ...pod, role: 'founder', synced_at: Date.now(), updated_at: Date.now() })
         setPods(prev => [{ ...pod, role: 'founder' }, ...prev])
         setSelectedPod({ ...pod, role: 'founder' })
         toast.success("Pod created successfully!")
@@ -335,8 +326,8 @@ export function DashboardContent() {
     setSubmitting(true)
     try {
       if (!isOnline) {
+        await updatePodOffline(selectedPod.id, { title: editPodTitle, summary: editPodSummary })
         const updatedPod = { ...selectedPod, title: editPodTitle, summary: editPodSummary }
-        await db.pods.put({ ...updatedPod, synced_at: Date.now(), updated_at: Date.now() })
         setSelectedPod(updatedPod)
         setPods(prev => prev.map(p => p.id === selectedPod.id ? updatedPod : p))
         toast.success("Pod updated offline")
@@ -352,7 +343,7 @@ export function DashboardContent() {
       if (res.ok) {
         const pod = await res.json()
         const updatedPod = { ...selectedPod, ...pod }
-        await db.pods.put({ ...updatedPod, synced_at: Date.now() })
+        await db.pods.put({ ...updatedPod, synced_at: Date.now(), updated_at: Date.now() })
         setSelectedPod(updatedPod)
         setPods(prev => prev.map(p => p.id === selectedPod.id ? updatedPod : p))
         toast.success("Pod updated successfully")
@@ -576,7 +567,7 @@ export function DashboardContent() {
           <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b md:hidden px-4 py-3 flex items-center justify-between">
             <MobileMenuButton onClick={() => setMobileMenuOpen(true)} />
             <span className="font-semibold">{selectedPod?.title || "Dashboard"}</span>
-            <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncPendingChanges} />
+                        <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={forceSyncNow} lastSyncError={lastSyncError} />
           </div>
 
           <div className="p-4 md:p-6">
@@ -605,7 +596,7 @@ export function DashboardContent() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="hidden md:block"><OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncPendingChanges} /></div>
+                    <div className="hidden md:block">            <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={forceSyncNow} lastSyncError={lastSyncError} /></div>
                     <div className="relative flex-1 md:flex-none"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 w-full md:w-40" /></div>
                     
                     <Select value={filterPriority} onValueChange={setFilterPriority}>
