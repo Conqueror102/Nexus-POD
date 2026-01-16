@@ -42,14 +42,15 @@ import { TaskComments } from "@/components/task-comments"
 import { DeletePodDialog } from "@/components/delete-pod-dialog"
 
 export function DashboardContent() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, isOffline: authIsOffline } = useAuth()
   const supabase = createClient()
   const { 
     isOnline, isSyncing, pendingCount, syncPendingChanges, cachePodData,
     createTaskOffline, updateTaskOffline, deleteTaskOffline,
     createProjectOffline, updateProjectOffline, deleteProjectOffline,
     sendChatOffline, addCommentOffline, createPodOffline, updatePodOffline,
-    forceSyncNow, lastSyncError
+    forceSyncNow, lastSyncError,
+    getOfflinePods, getOfflineProjects, getOfflineTasks, getOfflineMembers, getOfflineChat
   } = useOfflineSync()
   
   const [pods, setPods] = useState<PodWithRole[]>([])
@@ -90,25 +91,22 @@ export function DashboardContent() {
 
   const fetchPods = useCallback(async () => {
     try {
-      if (!isOnline) {
-        try {
-          const offlinePods = await db.pods.toArray()
-          setPods(offlinePods.map(p => ({
+      const offlinePods = await getOfflinePods()
+      
+      if (!isOnline || authIsOffline) {
+        if (offlinePods.length > 0) {
+          const mappedPods = offlinePods.map(p => ({
             ...p,
             updated_at: new Date(p.updated_at).toISOString(),
             created_at: p.created_at || new Date().toISOString()
-          })))
-          if (offlinePods.length > 0 && !selectedPod) {
-            const first = offlinePods[0]
-            setSelectedPod({
-              ...first,
-              updated_at: new Date(first.updated_at).toISOString(),
-              created_at: first.created_at || new Date().toISOString()
-            })
+          }))
+          setPods(mappedPods)
+          if (!selectedPod) {
+            setSelectedPod(mappedPods[0])
           }
-          setLoading(false)
-          return
-        } catch (error) { console.error('Error loading offline pods:', error) }
+        }
+        setLoading(false)
+        return
       }
 
       try {
@@ -123,39 +121,30 @@ export function DashboardContent() {
           }))
           if (data.length > 0 && !selectedPod) setSelectedPod(data[0])
         } else {
-          const offlinePods = await db.pods.toArray()
-          setPods(offlinePods.map(p => ({
-            ...p,
-            updated_at: new Date(p.updated_at).toISOString(),
-            created_at: p.created_at || new Date().toISOString()
-          })))
-          if (offlinePods.length > 0 && !selectedPod) {
-            const first = offlinePods[0]
-            setSelectedPod({
-              ...first,
-              updated_at: new Date(first.updated_at).toISOString(),
-              created_at: first.created_at || new Date().toISOString()
-            })
+          if (offlinePods.length > 0) {
+            const mappedPods = offlinePods.map(p => ({
+              ...p,
+              updated_at: new Date(p.updated_at).toISOString(),
+              created_at: p.created_at || new Date().toISOString()
+            }))
+            setPods(mappedPods)
+            if (!selectedPod) setSelectedPod(mappedPods[0])
           }
         }
       } catch (fetchError) {
-        const offlinePods = await db.pods.toArray()
-        setPods(offlinePods.map(p => ({
-          ...p,
-          updated_at: new Date(p.updated_at).toISOString(),
-          created_at: p.created_at || new Date().toISOString()
-        })))
-        if (offlinePods.length > 0 && !selectedPod) {
-          const first = offlinePods[0]
-          setSelectedPod({
-            ...first,
-            updated_at: new Date(first.updated_at).toISOString(),
-            created_at: first.created_at || new Date().toISOString()
-          })
+        console.warn('Fetch failed, using offline data:', fetchError)
+        if (offlinePods.length > 0) {
+          const mappedPods = offlinePods.map(p => ({
+            ...p,
+            updated_at: new Date(p.updated_at).toISOString(),
+            created_at: p.created_at || new Date().toISOString()
+          }))
+          setPods(mappedPods)
+          if (!selectedPod) setSelectedPod(mappedPods[0])
         }
       }
     } finally { setLoading(false) }
-  }, [isOnline, selectedPod])
+  }, [isOnline, authIsOffline, selectedPod, getOfflinePods])
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -183,49 +172,45 @@ export function DashboardContent() {
     if (!selectedPod) return
 
     try {
-      if (!isOnline) {
-        try {
-          const offlineProjects = await db.projects.where('pod_id').equals(selectedPod.id).toArray()
-          const offlineTasks = await db.tasks.where('project_id').anyOf(offlineProjects.map(p => p.id)).toArray()
-          const offlineMessages = await db.chatMessages.where('pod_id').equals(selectedPod.id).toArray()
-          const offlineMembers = await db.members.where('pod_id').equals(selectedPod.id).toArray()
-          
-          setProjects(offlineProjects.map(p => ({
-            ...p,
-            updated_at: new Date(p.updated_at).toISOString(),
-            created_at: p.created_at || new Date().toISOString()
-          })))
-          // Tasks and Messages usually already have string dates in offline DB for created_at/due_date but updated_at is number
-          // Check OfflineTask interface: updated_at: number. Task interface: updated_at: string.
-          setTasks(offlineTasks.map(t => ({
-            ...t,
-            updated_at: new Date(t.updated_at).toISOString(),
-            // created_at is string in OfflineTask, so no change needed
-          })) as any)
-          setChatMessages(offlineMessages as any)
-          setMembers(offlineMembers.map(m => ({
-            id: m.id,
-            pod_id: m.pod_id,
-            user_id: m.user_id,
-            role: m.role,
-            joined_at: m.joined_at,
-            profiles: {
-              display_name: m.display_name,
-              email: m.email,
-              avatar_url: m.avatar_url,
-              id: m.user_id,
-              notification_email: false,
-              notification_push: false,
-              timezone: '',
-              created_at: '',
-              updated_at: '',
-              role: 'user'
-            }
-          })))
-          setActivityLogs([])
-          setPodFiles([])
-          return
-        } catch (error) { console.error('Error loading offline data:', error) }
+      const offlineProjects = await getOfflineProjects(selectedPod.id)
+      const projectIds = offlineProjects.map(p => p.id)
+      const offlineTasks = projectIds.length > 0 ? await getOfflineTasks(projectIds) : []
+      const offlineMessages = await getOfflineChat(selectedPod.id)
+      const offlineMembers = await getOfflineMembers(selectedPod.id)
+
+      if (!isOnline || authIsOffline) {
+        setProjects(offlineProjects.map(p => ({
+          ...p,
+          updated_at: new Date(p.updated_at).toISOString(),
+          created_at: p.created_at || new Date().toISOString()
+        })))
+        setTasks(offlineTasks.map(t => ({
+          ...t,
+          updated_at: new Date(t.updated_at).toISOString(),
+        })) as any)
+        setChatMessages(offlineMessages as any)
+        setMembers(offlineMembers.map(m => ({
+          id: m.id,
+          pod_id: m.pod_id,
+          user_id: m.user_id,
+          role: m.role,
+          joined_at: m.joined_at,
+          profiles: {
+            display_name: m.display_name,
+            email: m.email,
+            avatar_url: m.avatar_url,
+            id: m.user_id,
+            notification_email: false,
+            notification_push: false,
+            timezone: '',
+            created_at: '',
+            updated_at: '',
+            role: 'user'
+          }
+        })))
+        setActivityLogs([])
+        setPodFiles([])
+        return
       }
 
       const [projectsRes, tasksRes, membersRes, chatRes, activityRes, filesRes] = await Promise.all([
@@ -237,10 +222,17 @@ export function DashboardContent() {
         fetch(`/api/files?pod_id=${selectedPod.id}`, { signal: AbortSignal.timeout(10000) }).catch(() => ({ ok: false })),
       ])
 
-      const projectsData = projectsRes.ok ? await (projectsRes as Response).json() : []
-      const tasksData = tasksRes.ok ? await (tasksRes as Response).json() : []
-      const membersData = membersRes.ok ? await (membersRes as Response).json() : []
-      const chatData = chatRes.ok ? await (chatRes as Response).json() : []
+      const projectsData = projectsRes.ok ? await (projectsRes as Response).json() : offlineProjects.map(p => ({
+        ...p, updated_at: new Date(p.updated_at).toISOString(), created_at: p.created_at || new Date().toISOString()
+      }))
+      const tasksData = tasksRes.ok ? await (tasksRes as Response).json() : offlineTasks.map(t => ({
+        ...t, updated_at: new Date(t.updated_at).toISOString()
+      }))
+      const membersData = membersRes.ok ? await (membersRes as Response).json() : offlineMembers.map(m => ({
+        id: m.id, pod_id: m.pod_id, user_id: m.user_id, role: m.role, joined_at: m.joined_at,
+        profiles: { display_name: m.display_name, email: m.email, avatar_url: m.avatar_url, id: m.user_id, notification_email: false, notification_push: false, timezone: '', created_at: '', updated_at: '', role: 'user' as const }
+      }))
+      const chatData = chatRes.ok ? await (chatRes as Response).json() : offlineMessages
       const activityData = activityRes.ok ? await (activityRes as Response).json() : []
       const filesData = filesRes.ok ? await (filesRes as Response).json() : []
 
@@ -262,7 +254,7 @@ export function DashboardContent() {
         })
       }
     } catch (error) { console.warn('Error fetching pod data:', error) }
-  }, [selectedPod, isOnline, cachePodData])
+  }, [selectedPod, isOnline, authIsOffline, cachePodData, getOfflineProjects, getOfflineTasks, getOfflineChat, getOfflineMembers])
 
   useEffect(() => {
     if (!selectedPod || !user) return

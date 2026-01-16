@@ -8,6 +8,7 @@ import type { Profile } from "@/lib/types"
 interface AuthContextType {
   user: Profile | null
   loading: boolean
+  isOffline: boolean
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -15,6 +16,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  isOffline: false,
   signOut: async () => {},
   refreshUser: async () => {},
 })
@@ -26,18 +28,55 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isOffline, setIsOffline] = useState(false)
   const supabase = createClient()
 
-  async function fetchUser() {
+  async function loadCachedUserFirst() {
     try {
-      // First try to load cached user
+      const cachedUser = await db.cachedUser.get('current_user')
+      if (cachedUser) {
+        setUser(cachedUser)
+      }
+    } catch (e) {
+      console.warn("Could not preload cached user:", e)
+    }
+  }
+
+  async function fetchUser() {
+    const online = typeof navigator !== 'undefined' ? navigator.onLine : true
+    setIsOffline(!online)
+
+    try {
       const cachedUser = await db.cachedUser.get('current_user')
       
-      // Try to get fresh session
-      const { data: { session } } = await supabase.auth.getSession()
+      if (!online) {
+        if (cachedUser) {
+          setUser(cachedUser)
+        }
+        setLoading(false)
+        return
+      }
+      
+      const sessionPromise = supabase.auth.getSession()
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session timeout')), 5000)
+      )
+      
+      let session
+      try {
+        const result = await Promise.race([sessionPromise, timeoutPromise]) as { data: { session: any } }
+        session = result.data.session
+      } catch (timeoutError) {
+        console.warn("Session fetch timed out, using cache")
+        if (cachedUser) {
+          setUser(cachedUser)
+          setIsOffline(true)
+        }
+        setLoading(false)
+        return
+      }
       
       if (!session) {
-        // If no session but we have cached user, use it (offline mode)
         if (cachedUser) {
           setUser(cachedUser)
         } else {
@@ -59,7 +98,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           if (profile) {
             setUser(profile)
-            // Cache the user for offline access
             await db.cachedUser.put({ id: 'current_user', ...profile })
           } else {
             const newProfile = {
@@ -70,34 +108,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
               await supabase.from("profiles").insert(newProfile)
               setUser(newProfile as Profile)
-              // Cache the new user
               await db.cachedUser.put({ id: 'current_user', ...newProfile })
             } catch (insertError) {
               console.warn("Could not create profile, using partial data:", insertError)
               setUser(newProfile as Profile)
-              // Still cache it
               await db.cachedUser.put({ id: 'current_user', ...newProfile })
             }
           }
         } catch (profileError) {
           console.warn("Error fetching profile, checking cache:", profileError)
-          // Try to use cached user if available
           if (cachedUser) {
             setUser(cachedUser)
           } else {
-            // Otherwise use auth data
             const basicProfile: Profile = {
               id: authUser.id,
               email: authUser.email || "",
               display_name: authUser.user_metadata?.display_name || authUser.email?.split("@")[0] || "User",
             }
             setUser(basicProfile)
-            // Cache this basic profile
             await db.cachedUser.put({ id: 'current_user', ...basicProfile })
           }
         }
       } else {
-        // No auth user, use cached if available
         if (cachedUser) {
           setUser(cachedUser)
         } else {
@@ -106,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.warn("Error in fetchUser, trying cache:", error)
-      // Try to load cached user as fallback
+      setIsOffline(true)
       try {
         const cachedUser = await db.cachedUser.get('current_user')
         if (cachedUser) {
@@ -124,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    loadCachedUserFirst()
     fetchUser()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
@@ -131,10 +164,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await fetchUser()
       } else if (event === "SIGNED_OUT") {
         setUser(null)
+        await db.cachedUser.delete('current_user')
       }
     })
 
-    return () => subscription.unsubscribe()
+    function handleOnline() {
+      setIsOffline(false)
+      fetchUser()
+    }
+    function handleOffline() {
+      setIsOffline(true)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
   }, [])
 
   async function signOut() {
@@ -144,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn("Sign out error:", error)
     }
     setUser(null)
+    await db.cachedUser.delete('current_user')
   }
 
   async function refreshUser() {
@@ -151,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signOut, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, isOffline, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )
