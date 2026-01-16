@@ -42,25 +42,45 @@ export function ChatTab({
         </CardHeader>
         <CardContent className="flex-1 flex flex-col min-h-0">
           <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-4">
+            <div className="space-y-3 px-1">
                 {chatMessages.map((msg) => {
                   const isOwnMessage = msg.user_id === user?.id
                   return (
-                    <div key={msg.id} className={`flex gap-3 ${isOwnMessage ? "flex-row-reverse" : ""}`}>
-                      <Avatar className="h-8 w-8 flex-shrink-0">
-                        <AvatarImage src={msg.profiles?.avatar_url || undefined} />
-                        <AvatarFallback className="text-xs">
-                          {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className={`max-w-[70%] ${isOwnMessage ? "text-right" : ""}`}>
-                        <div className={`rounded-lg px-3 py-2 ${isOwnMessage ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                          <p className="text-sm">{msg.content}</p>
+                    <div 
+                      key={msg.id} 
+                      className={`flex gap-2 ${isOwnMessage ? "justify-end" : "justify-start"}`}
+                    >
+                      {!isOwnMessage && (
+                        <Avatar className="h-8 w-8 flex-shrink-0">
+                          <AvatarImage src={msg.profiles?.avatar_url || undefined} />
+                          <AvatarFallback className="text-xs">
+                            {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div className={`max-w-[75%] sm:max-w-[70%] ${isOwnMessage ? "items-end" : "items-start"} flex flex-col`}>
+                        <div 
+                          className={`rounded-2xl px-3 py-2 ${
+                            isOwnMessage 
+                              ? "bg-green-500 text-white rounded-br-md" 
+                              : "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-md"
+                          }`}
+                        >
+                          <p className="text-sm break-words">{msg.content}</p>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {msg.profiles?.display_name} · {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
+                        <p className={`text-[10px] text-muted-foreground mt-1 ${isOwnMessage ? "text-right" : "text-left"}`}>
+                          {!isOwnMessage && <span>{msg.profiles?.display_name} · </span>}
+                          {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true })}
                         </p>
                       </div>
+                      {isOwnMessage && (
+                        <Avatar className="h-8 w-8 flex-shrink-0">
+                          <AvatarImage src={msg.profiles?.avatar_url || undefined} />
+                          <AvatarFallback className="text-xs">
+                            {msg.profiles?.display_name?.substring(0, 2).toUpperCase() || "U"}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
                     </div>
                   )
                 })}
