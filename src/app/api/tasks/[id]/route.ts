@@ -38,21 +38,17 @@ export async function PATCH(
 
   // @ts-ignore
   const isFounder = task.projects.pods.founder_id === user.id
-  const isAssignee = task.assigned_to === user.id
 
-  // Rule: Founder can update any task, Assignee can update only their tasks
-  if (!isFounder && !isAssignee) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+  if (!isFounder) {
+    return NextResponse.json({ error: "Only founders can update tasks" }, { status: 403 })
   }
 
-  // If not founder, only status can be updated
-  const finalUpdates = isFounder ? updates : { status: updates.status }
-  delete finalUpdates.updated_at // Remove from object to avoid manual conflict
+  delete updates.updated_at
 
   const { data, error } = await supabase
     .from("tasks")
     .update({ 
-      ...finalUpdates, 
+      ...updates, 
       updated_at: incoming_updated_at ? new Date(incoming_updated_at).toISOString() : new Date().toISOString() 
     })
     .eq("id", id)

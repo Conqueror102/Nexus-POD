@@ -36,7 +36,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Not a member of this pod' }, { status: 403 })
   }
 
-  // Members can create tasks in projects
+  if (membership.role !== 'founder') {
+    return NextResponse.json({ error: 'Only founders can create tasks' }, { status: 403 })
+  }
   const { data: task, error } = await supabase
     .from('tasks')
     .insert({
