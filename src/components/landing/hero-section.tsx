@@ -21,16 +21,16 @@ export function HeroSection() {
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-            <span className="text-foreground">Built for Africa's</span>
+            <span className="text-foreground">Your Workspace,</span>
             <br />
             <span className="bg-gradient-to-r from-primary via-primary/80 to-primary bg-clip-text text-transparent">
-              Connectivity
+              Redefined for Africa
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-            We understand that internet can be unreliable. Nexus Pod works offline and syncs when you're back online. 
-            <span className="block mt-2 font-medium text-foreground">Your productivity shouldn't depend on your ISP.</span>
+            A lightweight, offline-first workspace for founders, creators, and small teams.
+            Budget-friendly pricing in Naira. No bloat, just what you need to ship.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
