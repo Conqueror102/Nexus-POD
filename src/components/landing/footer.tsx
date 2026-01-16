@@ -1,55 +1,98 @@
-"use client"
+import Link from "next/link";
+import { Zap } from "lucide-react";
 
-import Link from "next/link"
-import { Hexagon, Globe, MessageSquare, Zap } from "lucide-react"
+const footerLinks = {
+  product: [
+    { label: "Features", href: "#features" },
+    { label: "Pricing", href: "#pricing" },
+    { label: "Testimonials", href: "#testimonials" },
+  ],
+  company: [
+    { label: "About", href: "#" },
+    { label: "Blog", href: "#" },
+    { label: "Careers", href: "#" },
+  ],
+  resources: [
+    { label: "Documentation", href: "#" },
+    { label: "Help Center", href: "#" },
+    { label: "Contact", href: "#" },
+  ],
+  legal: [
+    { label: "Privacy Policy", href: "#" },
+    { label: "Terms of Service", href: "#" },
+  ],
+};
 
 export function Footer() {
   return (
-    <footer className="relative z-10 border-t border-vintage-mint/5 py-16 bg-vintage-green">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mb-16">
+    <footer className="border-t border-border/50 bg-muted/30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 lg:gap-12">
           <div className="col-span-2">
-            <Link href="/" className="flex items-center gap-3 mb-6 group">
-              <Hexagon className="w-8 h-8 text-vintage-amber fill-vintage-amber/10 group-hover:rotate-90 transition-transform duration-500" strokeWidth={1.5} />
-              <span className="text-xl font-bold tracking-tighter text-vintage-mint">NEXUS POD</span>
+            <Link href="/" className="flex items-center gap-2 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg shadow-primary/25">
+                <Zap className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="text-xl font-bold">Nexus Pod</span>
             </Link>
-            <p className="text-vintage-mint/50 max-w-xs leading-relaxed font-light text-sm">
-              The high-performance workspace for moder founders and their elite teams. 
-              Built for the next decade of digital creation.
+            <p className="text-sm text-muted-foreground max-w-xs mb-6">
+              A lightweight, offline-first workspace built for African founders,
+              creators, and teams.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              © {new Date().getFullYear()} Nexus Pod. All rights reserved.
             </p>
           </div>
+
           <div>
-            <h4 className="text-vintage-mint font-bold mb-6 font-serif">Product</h4>
-            <ul className="space-y-4 text-vintage-mint/50 text-sm">
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Features</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Integrations</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Updates</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Pricing</Link></li>
+            <h4 className="font-semibold mb-4 text-sm">Product</h4>
+            <ul className="space-y-3">
+              {footerLinks.product.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
+
           <div>
-            <h4 className="text-vintage-mint font-bold mb-6 font-serif">Company</h4>
-            <ul className="space-y-4 text-vintage-mint/50 text-sm">
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">About Us</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Careers</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Privacy</Link></li>
-              <li><Link href="#" className="hover:text-vintage-amber transition-colors">Terms</Link></li>
+            <h4 className="font-semibold mb-4 text-sm">Company</h4>
+            <ul className="space-y-3">
+              {footerLinks.company.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-8 border-t border-vintage-mint/5">
-          <p className="text-sm text-vintage-mint/40 font-light">
-            © {new Date().getFullYear()} NEXUS POD. All rights reserved.
-          </p>
-          <div className="flex gap-6">
-            {[Globe, MessageSquare, Zap].map((Icon, i) => (
-              <Link key={i} href="#" className="text-vintage-mint/40 hover:text-vintage-amber transition-colors">
-                <Icon className="w-5 h-5" />
-              </Link>
-            ))}
+
+          <div>
+            <h4 className="font-semibold mb-4 text-sm">Legal</h4>
+            <ul className="space-y-3">
+              {footerLinks.legal.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </div>
     </footer>
-  )
+  );
 }

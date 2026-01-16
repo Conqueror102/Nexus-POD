@@ -1,69 +1,110 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Hexagon, Menu } from "lucide-react"
-import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Menu, X, Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function Navbar() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const navLinks = [
+    { href: "#features", label: "Features" },
+    { href: "#pricing", label: "Pricing" },
+    { href: "#testimonials", label: "Testimonials" },
+  ];
 
   return (
-    <header className="fixed top-0 w-full z-50 border-b border-vintage-mint/10 bg-vintage-green/80 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
-          <Link href="/" className="flex items-center gap-3 group">
+    <header
+      className={cn(
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+        isScrolled
+          ? "bg-background/80 backdrop-blur-xl border-b border-border/50 shadow-sm"
+          : "bg-transparent"
+      )}
+    >
+      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 lg:h-20">
+          <Link href="/" className="flex items-center gap-2 group">
             <div className="relative">
-              <div className="absolute inset-0 bg-vintage-amber/20 blur-md group-hover:bg-vintage-amber/40 transition-all" />
-              <Hexagon className="relative w-10 h-10 text-vintage-amber fill-vintage-amber/10 transition-transform group-hover:scale-110" strokeWidth={1.5} />
-              <span className="absolute inset-0 flex items-center justify-center text-vintage-amber font-bold text-sm">N</span>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg shadow-primary/25 group-hover:shadow-primary/40 transition-shadow">
+                <Zap className="w-5 h-5 text-primary-foreground" />
+              </div>
             </div>
-            <span className="text-xl font-bold tracking-tighter text-vintage-mint">
-              NEXUS POD
-            </span>
+            <span className="text-xl font-bold">Nexus Pod</span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-vintage-mint/70">
-            <Link href="#features" className="hover:text-vintage-amber transition-colors">Architecture</Link>
-            <Link href="#pricing" className="hover:text-vintage-amber transition-colors">Pricing</Link>
-            <Link href="#testimonials" className="hover:text-vintage-amber transition-colors">Stories</Link>
-          </nav>
+          <div className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
 
-          <div className="flex items-center gap-4">
-            <Link href="/login" className="hidden sm:block">
-              <Button variant="ghost" className="text-vintage-mint hover:text-vintage-amber hover:bg-vintage-mint/5">
+          <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
+            <Link href="/login">
+              <Button variant="ghost" size="sm" className="font-medium">
                 Sign In
               </Button>
             </Link>
             <Link href="/signup">
-              <Button className="bg-vintage-amber text-vintage-green hover:bg-vintage-amber/90 font-bold px-6 shadow-[0_0_20px_rgba(252,211,77,0.15)]">
-                Launch App
+              <Button size="sm" className="font-medium bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25">
+                Get Started
               </Button>
             </Link>
-            <button className="md:hidden text-vintage-mint" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              <Menu />
-            </button>
           </div>
-        </div>
-      </div>
-      
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-vintage-green border-b border-vintage-mint/10 overflow-hidden"
+
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-2 rounded-lg hover:bg-muted/50 transition-colors"
           >
-            <div className="px-4 py-4 space-y-4 flex flex-col">
-              <Link href="#features" className="text-vintage-mint/80 hover:text-vintage-amber" onClick={() => setMobileMenuOpen(false)}>Architecture</Link>
-              <Link href="#pricing" className="text-vintage-mint/80 hover:text-vintage-amber" onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
-              <Link href="/login" className="text-vintage-mint/80 hover:text-vintage-amber" onClick={() => setMobileMenuOpen(false)}>Sign In</Link>
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {isMobileMenuOpen && (
+          <div className="md:hidden py-4 border-t border-border/50">
+            <div className="flex flex-col gap-2">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <div className="flex items-center gap-3 px-4 pt-4 border-t border-border/50 mt-2">
+                <ThemeToggle />
+                <Link href="/login" className="flex-1">
+                  <Button variant="outline" size="sm" className="w-full">Sign In</Button>
+                </Link>
+                <Link href="/signup" className="flex-1">
+                  <Button size="sm" className="w-full">Get Started</Button>
+                </Link>
+              </div>
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </nav>
     </header>
-  )
+  );
 }
